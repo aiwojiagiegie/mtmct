@@ -1,0 +1,6 @@
+dataset/AIC19
+dataset/AIC19_VeRi
+*.pth
+*.pt
+*.t7
+.idea
