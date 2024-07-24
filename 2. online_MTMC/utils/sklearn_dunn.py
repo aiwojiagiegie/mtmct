@@ -107,7 +107,7 @@ def dunn(labels, distances, diameter_method='farthest', cdist_method='nearest'):
 
 # if __name__ == '__main__':
 #     from sklearn.metrics.pairwise import euclidean_distances
-#     from sklearn.datasets import load_iris
+#     from sklearn.dataset import load_iris
 #     from sklearn.cluster import KMeans
 #
 #     data = load_iris()

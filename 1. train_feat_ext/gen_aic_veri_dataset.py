@@ -10,14 +10,15 @@ import shutil
 # "001051" is the 1051^th frame in the sequence "c1s1"
 
 # Create patches directory
-crop_save = '../../dataset/AIC19_VeRi/'
+crop_save = '../dataset/AIC19_VeRi/'
 if not os.path.exists(crop_save):
     os.makedirs(crop_save)
 
-# For AIC19
-data_path = '../../dataset/AIC19/train/'
+# For AIC191
+data_path = '../dataset/AIC19/validation/'
 
-scenes = os.listdir(data_path)
+# scenes = os.listdir(data_path)
+scenes = ['S02']
 for scene in scenes:
     # For each cam
     cams = os.listdir(data_path + scene)
@@ -38,10 +39,13 @@ for scene in scenes:
             # Read frame image
             img_path = cam_path + 'frame/%s_f%04d.jpg' % (cam, f_num)
             frame_img = cv2.imread(img_path)
-
+            # if frame_img is None:
+            #     continue
             # Save bbox patch
             bbox = frame_img[top:top+h+1, left:left+w+1, :]
-            cv2.imwrite(crop_save + '%04d_%s_%08d_0.jpg' % (obj_id, cam, f_num), bbox)
+            image_path = crop_save + '%04d_%s_%08d_0.jpg' % (obj_id, cam, f_num)
+            cv2.imwrite(image_path, bbox)
+            print(f'完成生成{image_path}')
 
         # print current status
         print('%s_%s Finished' % (scene, cam))

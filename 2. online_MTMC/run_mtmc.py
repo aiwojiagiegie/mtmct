@@ -3,9 +3,10 @@ import cv2
 import time
 import copy
 import torch
-import pickle
 import random
 import numpy as np
+from tqdm import tqdm
+from outputs.eval import calculate_results
 from opts import opt
 from torchvision import transforms
 from utils.sklearn_dunn import dunn
@@ -80,7 +81,7 @@ def run_mtmc():
     # Prepare others
     cams = os.listdir(opt.data_dir)
     datasets, trackers, f_nums = {}, {}, []
-    roi_masks, overlap_regions = {}, {}
+    roi_masks, overlap_regions_cam2cam = {}, {}
     for cam in cams:
         # Prepare 1
         img_dir = os.path.join(opt.data_dir, cam) + '/frame/*'
@@ -90,9 +91,9 @@ def run_mtmc():
 
         # Prepare 2
         roi_masks[cam] = cv2.imread('./preliminary/rois/%s.png' % cam, cv2.IMREAD_GRAYSCALE)
-        overlap_regions[cam] = {}
+        overlap_regions_cam2cam[cam] = {}
         for cam_ in cams:
-            overlap_regions[cam][cam_] = cv2.imread('./preliminary/overlap_zones/%s_%s.png' % (cam, cam_),
+            overlap_regions_cam2cam[cam][cam_] = cv2.imread('./preliminary/overlap_zones/%s_%s.png' % (cam, cam_),
                                                     cv2.IMREAD_GRAYSCALE) if cam_ != cam else None
 
     # Warm-up models
@@ -101,7 +102,7 @@ def run_mtmc():
             det_model(torch.rand((4, 3, img_size[0], img_size[1]), device='cuda').half())
             feat_ext_model(torch.rand((10, 3, opt.patch_size[0], opt.patch_size[1]), device='cuda').half())
 
-    # Temporal alignment
+    # Temporal alignment 时间对齐的序列
     temp_align = {}
     for cam in cams:
         temp_align[cam] = {}
@@ -190,7 +191,7 @@ def run_mtmc():
     #     batch_feats = pickle.load(f)
 
     # Run
-    for fdx in range(0, np.max(f_nums) + 1):
+    for fdx in tqdm(range(0, np.max(f_nums) + 1)):
         # Generate empty batches
         batch_img = torch.zeros((len(cams), 3, img_size[0], img_size[1]), device='cuda').half()
         batch_img_ori = torch.zeros((len(cams), 3, opt.img_ori_size[0], opt.img_ori_size[1]), device='cuda').half()
@@ -203,12 +204,12 @@ def run_mtmc():
             valid_cam[cam] = True
             path, img, img_ori, _ = datasets[cam].__next__(cam, temp_align[cam][fdx])
 
-            # Check
+            # Check 这里检查是否有这样的图片存在文件夹中，如果没有则跳过然后到下一个摄像头中
             if img is None:
                 valid_cam[cam] = False
                 continue
 
-            # Store
+            # Store 把读取到的图片存到batch_img中并且序列化
             batch_img[cdx] = torch.tensor(img / 255.0, device='cuda').half()
             batch_img_ori[cdx] = torch.tensor(img_ori.transpose((2, 0, 1)) / 255.0, device='cuda').half()
 
@@ -223,9 +224,9 @@ def run_mtmc():
                                     classes=opt.classes, agnostic=opt.agnostic_nms)
 
         # Insert empty results
-        for cdx, cam in enumerate(cams):
+        for cam_index, cam in enumerate(cams):
             if not valid_cam[cam]:
-                preds.insert(cdx, torch.zeros((0, 6)).cuda().half())
+                preds.insert(cam_index, torch.zeros((0, 6)).cuda().half())
 
         total_times['Det'] += time.time() - start
         start = time.time()
@@ -242,14 +243,15 @@ def run_mtmc():
                 # Rescale boxes from img_size to im0s size
                 pred[:, :4] = scale_coords(batch_img.shape[2:], pred[:, :4], batch_img_ori.shape[2:4])
 
-                # Post-process detections
+                # Post-process detections xyxy应该分别是bbox的四个点的横纵坐标？
                 for *xyxy, conf, _ in reversed(pred):
-                    # Convert to integer
+                    # Convert to integerz
                     x1, y1 = round(xyxy[0].item()), round(xyxy[1].item())
                     x2, y2 = round(xyxy[2].item()), round(xyxy[3].item())
 
                     # Filter detections with RoI mask
-                    if roi_masks[cams[pdx]][min(y2 + 1, img_h) - 1, (max(x1, 0) + min(x2 + 1, img_w)) // 2] == 0:
+                    target = roi_masks[cams[pdx]][min(y2 + 1, img_h) - 1, (max(x1, 0) + min(x2 + 1, img_w)) // 2]
+                    if target == 0:
                         continue
 
                     # Filter detection with box size
@@ -361,14 +363,14 @@ def run_mtmc():
                     continue
 
                 # If the objects are not in overlapping region (i -> j)
-                overlap_region = overlap_regions[online_tracks[i].cam][online_tracks[j].cam]
+                overlap_region = overlap_regions_cam2cam[online_tracks[i].cam][online_tracks[j].cam]
                 x1, y1, x2, y2 = online_tracks[i].x1y1x2y2.astype(np.int32)
                 if overlap_region[y2, (x1 + x2) // 2] == 0:
                     p_dists[idx] = 10
                     continue
 
                 # If the objects are not in overlapping region (j -> i)
-                overlap_region = overlap_regions[online_tracks[j].cam][online_tracks[i].cam]
+                overlap_region = overlap_regions_cam2cam[online_tracks[j].cam][online_tracks[i].cam]
                 x1, y1, x2, y2 = online_tracks[j].x1y1x2y2.astype(np.int32)
                 if overlap_region[y2, (x1 + x2) // 2] == 0:
                     p_dists[idx] = 10
@@ -400,8 +402,8 @@ def run_mtmc():
         num_cluster = len(list(set(list(cluster))))
 
         # Assign global id to new tracks using other tracks in the same cluster
-        for cdx in range(num_cluster):
-            track_idx = np.where(cluster == cdx)[0]
+        for cam_index in range(num_cluster):
+            track_idx = np.where(cluster == cam_index)[0]
 
             # Check index and global id of tracks in same cluster
             infos = []
@@ -488,3 +490,5 @@ def run_mtmc():
 if __name__ == '__main__':
     with torch.no_grad():
         run_mtmc()
+    calculate_results('outputs/ground_truth_validation.txt','outputs/yolov7-e6e/mtmc_resnet50_ibn_a_gap.txt')
+

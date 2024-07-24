@@ -34,7 +34,7 @@ class Opts:
         self.parser.add_argument("--mtmc_match_thr", type=float, default=0.65)
 
         # Others
-        self.parser.add_argument('--data_dir', type=str, default='../../dataset/AIC19/test/S02/')
+        self.parser.add_argument('--data_dir', type=str, default='/data2/zhangkun/project/Fast_Online_MTMCT/dataset/AIC19/validation/S02')
         self.parser.add_argument('--output_dir', type=str, default='./outputs/')
         self.parser.add_argument('--min_box_size', type=int, default=0.001, help='minimum box size')
         self.parser.add_argument('--img_ori_size', type=int, default=[1080, 1920], help='original image size (pixels)')

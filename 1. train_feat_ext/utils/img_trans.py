@@ -1,19 +1,19 @@
 import cv2
-import config
+from ..config import *
 
 
 # Resize a rectangular image to a padded rectangular
 def letterbox(img, color=(0, 0, 0)):
     # shape = [height, width]
     shape = img.shape[:2]
-    ratio = min(float(config.img_h) / shape[0], float(config.img_w) / shape[1])
+    ratio = min(float(img_h) / shape[0], float(img_w) / shape[1])
 
     # new_shape = [width, height]
     new_shape = (round(shape[1] * ratio), round(shape[0] * ratio))
 
     # Padding
-    dh = (config.img_h - new_shape[1]) / 2
-    dw = (config.img_w - new_shape[0]) / 2
+    dh = (img_h - new_shape[1]) / 2
+    dw = (img_w - new_shape[0]) / 2
 
     # Top, bottom, left, right
     top, bottom = round(dh - 0.1), round(dh + 0.1)

@@ -70,8 +70,8 @@ class _HungarianState:
 
         # At this point, m >= n.
         n, m = self.C.shape
-        self.row_uncovered = np.ones(n, dtype=np.bool)
-        self.col_uncovered = np.ones(m, dtype=np.bool)
+        self.row_uncovered = np.ones(n, dtype=np.bool_)
+        self.col_uncovered = np.ones(m, dtype=np.bool_)
         self.Z0_r = 0
         self.Z0_c = 0
         self.path = np.zeros((n + m, 2), dtype=int)
@@ -165,9 +165,9 @@ def _step4(state):
     left. Save the smallest uncovered value and Go to Step 6.
     """
     # We convert to int as numpy operations are faster on int
-    C = (state.C == 0).astype(np.int)
+    C = (state.C == 0).astype(np.int64)
     covered_C = C * state.row_uncovered[:, np.newaxis]
-    covered_C *= state.col_uncovered.astype(dtype=np.int, copy=False)
+    covered_C *= state.col_uncovered.astype(dtype=np.int64, copy=False)
     n = state.C.shape[0]
     m = state.C.shape[1]
     while True:
@@ -189,7 +189,7 @@ def _step4(state):
                 state.row_uncovered[row] = False
                 state.col_uncovered[col] = True
                 covered_C[:, col] = C[:, col] * (
-                    state.row_uncovered.astype(dtype=np.int, copy=False))
+                    state.row_uncovered.astype(dtype=np.int64, copy=False))
                 covered_C[row] = 0
 
 
