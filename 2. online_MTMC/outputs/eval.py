@@ -338,10 +338,12 @@ def eval(test, pred, **kwargs):
             Filtered data with only objects that appear in 2 or more cameras.
         """
         # get unique CameraId/Id combinations, then count by Id
-        cnt = df[['CameraId', 'Id']].drop_duplicates()[['Id']].groupby(['Id']).size()
+        cnt = df[['CameraId', 'Id']]
+        cnt = cnt.drop_duplicates()[['Id']].groupby(['Id'])
+        cnt = cnt.size() # 这里获取到了哪些车辆id出现在摄像头的次数
         # keep only those Ids with a camera count > 1
         keep = cnt[cnt > 1]
-
+        no_keep=cnt[cnt <= 1]
         # retrict the data to kept ids
         return df.loc[df['Id'].isin(keep.index)]
 
@@ -403,7 +405,9 @@ def eval(test, pred, **kwargs):
             maxFrameId += mfid
 
         # compute multi-camera tracking evaluation stats
-        multiCamAcc = mm.utils.compare_to_groundtruth(pd.concat(gtds), pd.concat(tsds), 'iou')
+        gtds_concat = pd.concat(gtds)
+        tsds_concat = pd.concat(tsds)
+        multiCamAcc = mm.utils.compare_to_groundtruth(gtds_concat, tsds_concat, 'iou')
         metrics = list(mm.metrics.motchallenge_metrics)
         metrics.extend(['num_frames', 'idfp', 'idfn', 'idtp'])
         summary = mh.compute(multiCamAcc, metrics=metrics, name='MultiCam')
@@ -413,8 +417,11 @@ def eval(test, pred, **kwargs):
     mh = mm.metrics.create()
 
     # filter prediction data
+    # 根据ROI进行过滤
     pred = removeOutliersROI(pred, dstype=dstype, roidir=roidir)
+    # 过滤掉只出现在一个摄像头中的车辆
     pred = removeOutliersSingleCam(pred)
+    # 过滤掉重复出现的数据 根据'CameraId', 'Id', 'FrameId'判断是否重复
     pred = removeRepetition(pred)
 
     # evaluate results
@@ -444,7 +451,8 @@ def calculate_results(test_path, pred_path, mread=False, dstype='validation', ro
 
 
 if __name__ == '__main__':
-    calculate_results('ground_truth_validation.txt','yolov7-e6e/mtmc_resnet50_ibn_a_gap.txt')
+    # calculate_results('ground_truth_validation.txt','yolov7-e6e/mtmc_resnet50_ibn_a_gap.txt')
+    calculate_results('test_gt.txt','test_pred.txt')
     # args = get_args();
     # if not args.data or len(args.data) < 2:
     #     usage("Incorrect number of arguments. Must provide paths for the test (ground truth) and predicitons.")

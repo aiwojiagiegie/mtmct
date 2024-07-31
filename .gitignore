@@ -4,3 +4,5 @@ dataset/AIC19_VeRi
 *.pt
 *.t7
 .idea
+*.mp4
+*.zip

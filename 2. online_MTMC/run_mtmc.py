@@ -103,77 +103,7 @@ def run_mtmc():
             feat_ext_model(torch.rand((10, 3, opt.patch_size[0], opt.patch_size[1]), device='cuda').half())
 
     # Temporal alignment 时间对齐的序列
-    temp_align = {}
-    for cam in cams:
-        temp_align[cam] = {}
-        for i in range(0, np.max(f_nums) + 1):
-            # Default
-            temp_align[cam][i] = 0
-
-            # Set for each camera
-            if cam == 'c006':
-                temp_align[cam][i] = i
-
-            elif cam == 'c007':
-                if i <= 1037:
-                    temp_align[cam][i] = i + 1
-                elif 1040 <= i <= 1309:
-                    temp_align[cam][i] = i - 1
-                elif 1320 <= i <= 1339:
-                    temp_align[cam][i] = i - 11
-                elif 1350 <= i <= 1379:
-                    temp_align[cam][i] = i - 21
-                elif 1400 <= i <= 1449:
-                    temp_align[cam][i] = i - 41
-                elif 1460 <= i <= 1499:
-                    temp_align[cam][i] = i - 51
-                elif 1510 <= i <= 1537:
-                    temp_align[cam][i] = i - 61
-                elif 1540 <= i <= 1542:
-                    temp_align[cam][i] = i - 63
-                elif 1560 <= i <= 1609:
-                    temp_align[cam][i] = i - 80
-                elif 1620 <= i <= 1639:
-                    temp_align[cam][i] = i - 90
-                elif 1650 <= i <= 1864:
-                    temp_align[cam][i] = i - 100
-                elif 1870 <= i <= 1893:
-                    temp_align[cam][i] = i - 105
-                elif 1901 <= i <= 1920:
-                    temp_align[cam][i] = i - 112
-                elif 1927 <= i <= 1933:
-                    temp_align[cam][i] = i - 118
-                elif 1940 <= i <= 1989:
-                    temp_align[cam][i] = i - 124
-                elif 2000 <= i <= 2049:
-                    temp_align[cam][i] = i - 134
-                elif 2060 <= i:
-                    temp_align[cam][i] = i - 144
-
-            elif cam == 'c008':
-                if 7 <= i <= 421:
-                    temp_align[cam][i] = i - 6
-                elif 439 <= i <= 472:
-                    temp_align[cam][i] = i - 23
-                elif 479 <= i <= 548:
-                    temp_align[cam][i] = i - 29
-                elif 603 <= i <= 685:
-                    temp_align[cam][i] = i - 83
-                elif 728 <= i <= 925:
-                    temp_align[cam][i] = i - 125
-                elif 934 <= i <= 1397:
-                    temp_align[cam][i] = i - 133
-                elif 1401 <= i <= 1612:
-                    temp_align[cam][i] = i - 136
-                elif 1621 <= i <= 1752:
-                    temp_align[cam][i] = i - 144
-                elif 1763 <= i <= 1920:
-                    temp_align[cam][i] = i - 154
-                elif 1958 <= i:
-                    temp_align[cam][i] = i - 191
-
-            elif cam == 'c009':
-                temp_align[cam][i] = i - 9
+    temp_align = prepare_align(cams, f_nums)
 
     # For time measurement
     total_times = {'Det': 0, 'Ext': 0, 'MTSC': 0, 'MTMC': 0}
@@ -214,10 +144,12 @@ def run_mtmc():
             batch_img_ori[cdx] = torch.tensor(img_ori.transpose((2, 0, 1)) / 255.0, device='cuda').half()
 
         start = time.time()
-
+        # 目标检测阶段
         # Detect =====================================================================================================
         with torch.autocast('cuda'):
             preds = det_model(batch_img[list(valid_cam.values())], augment=opt.augment)[0]
+            debug_path='../dataset/debug'
+            # cv2.imwrite(f'{debug_path}/{cam}/{current_time_sec_}_{frame_index}_{index}_{label_name_}.jpg',preds)
 
         # NMS
         preds = non_max_suppression(preds, opt.conf_thres, opt.iou_thres,
@@ -241,9 +173,10 @@ def run_mtmc():
             # If there are valid predictions
             if len(pred) > 0:
                 # Rescale boxes from img_size to im0s size
+                debug_pred=pred[:, :4]
                 pred[:, :4] = scale_coords(batch_img.shape[2:], pred[:, :4], batch_img_ori.shape[2:4])
-
-                # Post-process detections xyxy应该分别是bbox的四个点的横纵坐标？
+                debug_pred = pred[:, :4]
+                # Post-process detections xyxy应该分别是bbox的左上角和右下角的横纵坐标？
                 for *xyxy, conf, _ in reversed(pred):
                     # Convert to integerz
                     x1, y1 = round(xyxy[0].item()), round(xyxy[1].item())
@@ -485,6 +418,82 @@ def run_mtmc():
         total_t += total_times[key] / (np.max(f_nums) + 1)
     print('Tracking Time: %05f' % track_t)
     print('Total Time: %05f' % total_t)
+
+
+def prepare_align(cams, f_nums):
+    temp_align = {}
+    for cam in cams:
+        temp_align[cam] = {}
+        for i in range(0, np.max(f_nums) + 1):
+            # Default
+            temp_align[cam][i] = 0
+            # temp_align[cam][i] = i + 1
+            # continue
+            # Set for each camera
+            if cam == 'c006':
+                temp_align[cam][i] = i
+
+            elif cam == 'c007':
+                if i <= 1037:
+                    temp_align[cam][i] = i + 1
+                elif 1040 <= i <= 1309:
+                    temp_align[cam][i] = i - 1
+                elif 1320 <= i <= 1339:
+                    temp_align[cam][i] = i - 11
+                elif 1350 <= i <= 1379:
+                    temp_align[cam][i] = i - 21
+                elif 1400 <= i <= 1449:
+                    temp_align[cam][i] = i - 41
+                elif 1460 <= i <= 1499:
+                    temp_align[cam][i] = i - 51
+                elif 1510 <= i <= 1537:
+                    temp_align[cam][i] = i - 61
+                elif 1540 <= i <= 1542:
+                    temp_align[cam][i] = i - 63
+                elif 1560 <= i <= 1609:
+                    temp_align[cam][i] = i - 80
+                elif 1620 <= i <= 1639:
+                    temp_align[cam][i] = i - 90
+                elif 1650 <= i <= 1864:
+                    temp_align[cam][i] = i - 100
+                elif 1870 <= i <= 1893:
+                    temp_align[cam][i] = i - 105
+                elif 1901 <= i <= 1920:
+                    temp_align[cam][i] = i - 112
+                elif 1927 <= i <= 1933:
+                    temp_align[cam][i] = i - 118
+                elif 1940 <= i <= 1989:
+                    temp_align[cam][i] = i - 124
+                elif 2000 <= i <= 2049:
+                    temp_align[cam][i] = i - 134
+                elif 2060 <= i:
+                    temp_align[cam][i] = i - 144
+
+            elif cam == 'c008':
+                if 7 <= i <= 421:
+                    temp_align[cam][i] = i - 6
+                elif 439 <= i <= 472:
+                    temp_align[cam][i] = i - 23
+                elif 479 <= i <= 548:
+                    temp_align[cam][i] = i - 29
+                elif 603 <= i <= 685:
+                    temp_align[cam][i] = i - 83
+                elif 728 <= i <= 925:
+                    temp_align[cam][i] = i - 125
+                elif 934 <= i <= 1397:
+                    temp_align[cam][i] = i - 133
+                elif 1401 <= i <= 1612:
+                    temp_align[cam][i] = i - 136
+                elif 1621 <= i <= 1752:
+                    temp_align[cam][i] = i - 144
+                elif 1763 <= i <= 1920:
+                    temp_align[cam][i] = i - 154
+                elif 1958 <= i:
+                    temp_align[cam][i] = i - 191
+
+            elif cam == 'c009':
+                temp_align[cam][i] = i - 9
+    return temp_align
 
 
 if __name__ == '__main__':
