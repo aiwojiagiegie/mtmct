@@ -151,7 +151,7 @@ def run_mtmc():
             debug_path='../dataset/debug'
             # cv2.imwrite(f'{debug_path}/{cam}/{current_time_sec_}_{frame_index}_{index}_{label_name_}.jpg',preds)
 
-        # NMS
+        # NMS之后是最终的检测结果
         preds = non_max_suppression(preds, opt.conf_thres, opt.iou_thres,
                                     classes=opt.classes, agnostic=opt.agnostic_nms)
 
@@ -199,6 +199,7 @@ def run_mtmc():
                     # Get patch
                     patch = batch_img_ori[pdx][:, max(y1, 0):min(y2 + 1, img_h), max(x1, 0):min(x2 + 1, img_w)]
                     patch = normalize(letterbox(patch))
+                    # 如果是c008则水平翻转
                     batch_patch[det_count] = torch.fliplr(patch) if cams[pdx] == 'c008' else patch
                     det_count += 1
 
@@ -399,7 +400,7 @@ def run_mtmc():
 
             # Expand box, Since gt boxes are not tightly annotated around objects and quite larger than objects
             cx, cy = left + w / 2, top + h / 2
-            w, h = w * 1.5, h * 1.5
+            w, h = w * 1.45, h * 1.45
             left, top = cx - w / 2, cy - h / 2
 
             # Filter with size, Since gt does not include small boxes
