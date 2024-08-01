@@ -119,6 +119,7 @@ def prepare_align(cams, f_nums):
     return temp_align
 class MTMCT(object):
     def __init__(self, opt):
+        self.result_path = None
         self.opt = opt
         self.start = time.time()
 
@@ -129,81 +130,67 @@ class MTMCT(object):
 
         # For time measurement
         self.total_times = {'Det': 0, 'Ext': 0, 'MTSC': 0, 'MTMC': 0}
-    def run_mtmct(self):
-        # For detection model
-        stride = int(self.det_model.stride.max())
-        img_size = opt.img_size.copy()
-        img_size[0] = check_img_size(opt.img_size[0], s=stride)
-        img_size[1] = check_img_size(opt.img_size[1], s=stride)
-
+        self.cams = os.listdir(opt.data_dir)
+        self.stride = int(self.det_model.stride.max())
+        self.img_size = opt.img_size.copy()
+        self.img_size[0] = check_img_size(opt.img_size[0], s=self.stride)
+        self.img_size[1] = check_img_size(opt.img_size[1], s=self.stride)
         # Load feature extraction model
         feat_ext_model = FeatureExtractor(opt.feat_ext_name, opt.avg_type, opt.feat_ext_weights)
-        feat_ext_model = feat_ext_model.cuda().eval().half()
-
+        self.feat_ext_model = feat_ext_model.cuda().eval().half()
         # For feature extraction model
-        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
         # Prepare ========================================================================================================
         # Prepare output folder
-        output_dir = opt.output_dir + '%s/' % opt.det_name
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-
-        # Prepare result txt file
-        result_txt = open(output_dir + 'mtmc_%s_%s.txt' % (opt.feat_ext_name, opt.avg_type), 'w')
+        self.output_dir = opt.output_dir + '%s/' % opt.det_name
+        if not os.path.exists(self.output_dir):
+            os.makedirs(self.output_dir)
 
         # Prepare others
-        cams = os.listdir(opt.data_dir)
-        datasets, trackers, f_nums = {}, {}, []
-        roi_masks, overlap_regions_cam2cam = {}, {}
-        for cam in cams:
+        self.datasets, self.trackers, self.f_nums = {}, {}, []
+        self.roi_masks, self.overlap_regions_cam2cam = {}, {}
+        for cam in self.cams:
             # Prepare 1
             img_dir = os.path.join(opt.data_dir, cam) + '/frame/*'
-            datasets[cam] = iter(LoadImages(img_dir, img_size=img_size, stride=stride))
-            trackers[cam] = BoTSORT(opt)
-            f_nums.append(datasets[cam].nf)
+            self.datasets[cam] = iter(LoadImages(img_dir, img_size=self.img_size, stride=self.stride))
+            self.trackers[cam] = BoTSORT(opt)
+            self.f_nums.append(self.datasets[cam].nf)
 
             # Prepare 2
-            roi_masks[cam] = cv2.imread('./preliminary/rois/%s.png' % cam, cv2.IMREAD_GRAYSCALE)
-            overlap_regions_cam2cam[cam] = {}
-            for cam_ in cams:
-                overlap_regions_cam2cam[cam][cam_] = cv2.imread('./preliminary/overlap_zones/%s_%s.png' % (cam, cam_),
+            self.roi_masks[cam] = cv2.imread('./preliminary/rois/%s.png' % cam, cv2.IMREAD_GRAYSCALE)
+            self.overlap_regions_cam2cam[cam] = {}
+            for cam_ in self.cams:
+                self.overlap_regions_cam2cam[cam][cam_] = cv2.imread('./preliminary/overlap_zones/%s_%s.png' % (cam, cam_),
                                                                 cv2.IMREAD_GRAYSCALE) if cam_ != cam else None
-
         # Warm-up models
         with torch.autocast('cuda'):
             for _ in range(10):
-                self.det_model(torch.rand((4, 3, img_size[0], img_size[1]), device='cuda').half())
-                feat_ext_model(torch.rand((10, 3, opt.patch_size[0], opt.patch_size[1]), device='cuda').half())
+                self.det_model(torch.rand((4, 3, self.img_size[0], self.img_size[1]), device='cuda').half())
+                self.feat_ext_model(
+                    torch.rand((10, 3, opt.patch_size[0], opt.patch_size[1]), device='cuda').half())
 
         # Temporal alignment 时间对齐的序列
-        temp_align = prepare_align(cams, f_nums)
-
-        # Run ==============================================================================================================
-        # Initialize
-        img_h, img_w = opt.img_ori_size
-        next_global_id, dunn_index_prev = 0, -1e5
-        clusters_dict = {}
-
-        # detections, batch_feats = {}, {}
-        # with open('./outputs/yolov7-e6e/detections.pickle', 'rb') as f:
-        #     detections = pickle.load(f)
-        # with open('./outputs/yolov7-e6e/batch_feats_res101.pickle', 'rb') as f:
-        #     batch_feats = pickle.load(f)
-
+        self.temp_align = prepare_align(self.cams, self.f_nums)
+        self.img_h, self.img_w = opt.img_ori_size
+        self.next_global_id, self.dunn_index_prev = 0, -1e5
+        self.clusters_dict = {}
+    def run_mtmct(self):
+        # with open(self.output_dir + 'mtmc_%s_%s.txt' % (opt.feat_ext_name, opt.avg_type), 'w') as f:
+        result = []
         # Run
-        for fdx in tqdm(range(0, np.max(f_nums) + 1)):
+        for fdx in tqdm(range(0, np.max(self.f_nums) + 1)):
             # Generate empty batches
-            batch_img = torch.zeros((len(cams), 3, img_size[0], img_size[1]), device='cuda').half()
-            batch_img_ori = torch.zeros((len(cams), 3, opt.img_ori_size[0], opt.img_ori_size[1]), device='cuda').half()
-            batch_patch = torch.zeros((100 * len(cams), 3, opt.patch_size[0], opt.patch_size[1]), device='cuda').half()
+            batch_img = torch.zeros((len(self.cams), 3, self.img_size[0], self.img_size[1]), device='cuda').half()
+            batch_img_ori = torch.zeros((len(self.cams), 3, opt.img_ori_size[0], opt.img_ori_size[1]), device='cuda').half()
+            batch_patch = torch.zeros((100 * len(self.cams), 3, opt.patch_size[0], opt.patch_size[1]), device='cuda').half()
 
             # Prepare images
             valid_cam = {}
-            for cdx, cam in enumerate(cams):
+            for cdx, cam in enumerate(self.cams):
                 # Read
                 valid_cam[cam] = True
-                path, img, img_ori, _ = datasets[cam].__next__(cam, temp_align[cam][fdx])
+                path, img, img_ori, _ = self.datasets[cam].__next__(cam, self.temp_align[cam][fdx])
 
                 # Check 这里检查是否有这样的图片存在文件夹中，如果没有则跳过然后到下一个摄像头中
                 if img is None:
@@ -214,14 +201,14 @@ class MTMCT(object):
                 batch_img[cdx] = torch.tensor(img / 255.0, device='cuda').half()
                 batch_img_ori[cdx] = torch.tensor(img_ori.transpose((2, 0, 1)) / 255.0, device='cuda').half()
 
-            preds = self.detect(batch_img, cams,  valid_cam)
+            preds = self.detect(batch_img, valid_cam)
 
             # Prepare feature extraction =================================================================================
             # Prepare patches for feature extraction model
             det_count, detection = 0, {}
             for pdx, pred in enumerate(preds):
                 # Prepare dictionary to store detection results
-                detection[cams[pdx]] = np.zeros((0, 5))
+                detection[self.cams[pdx]] = np.zeros((0, 5))
 
                 # If there are valid predictions
                 if len(pred) > 0:
@@ -236,30 +223,30 @@ class MTMCT(object):
                         x2, y2 = round(xyxy[2].item()), round(xyxy[3].item())
 
                         # Filter detections with RoI mask
-                        target = roi_masks[cams[pdx]][min(y2 + 1, img_h) - 1, (max(x1, 0) + min(x2 + 1, img_w)) // 2]
+                        target = self.roi_masks[self.cams[pdx]][min(y2 + 1, self.img_h) - 1, (max(x1, 0) + min(x2 + 1, self.img_w)) // 2]
                         if target == 0:
                             continue
 
                         # Filter detection with box size
-                        if (x2 - x1) * (y2 - y1) <= img_h * img_w * opt.min_box_size / 2:
+                        if (x2 - x1) * (y2 - y1) <= self.img_h * self.img_w * opt.min_box_size / 2:
                             continue
 
                         # Add detections
                         new_box = np.array([(x1 + x2) / 2, (y1 + y2) / 2, (x2 - x1), (y2 - y1), conf.item()])
                         new_box = new_box[np.newaxis, :]
-                        detection[cams[pdx]] = np.concatenate([detection[cams[pdx]], new_box], axis=0)
+                        detection[self.cams[pdx]] = np.concatenate([detection[self.cams[pdx]], new_box], axis=0)
 
                         # Get patch
-                        patch = batch_img_ori[pdx][:, max(y1, 0):min(y2 + 1, img_h), max(x1, 0):min(x2 + 1, img_w)]
-                        patch = normalize(letterbox(patch))
+                        patch = batch_img_ori[pdx][:, max(y1, 0):min(y2 + 1, self.img_h), max(x1, 0):min(x2 + 1, self.img_w)]
+                        patch = self.normalize(letterbox(patch))
                         # 如果是c008则水平翻转
-                        batch_patch[det_count] = torch.fliplr(patch) if cams[pdx] == 'c008' else patch
+                        batch_patch[det_count] = torch.fliplr(patch) if self.cams[pdx] == 'c008' else patch
                         det_count += 1
 
             # Extract features
             with torch.autocast('cuda'):
                 batch_patch = batch_patch[:det_count]
-                batch_feat = feat_ext_model(batch_patch)
+                batch_feat = self.feat_ext_model(batch_patch)
             batch_feat = batch_feat.squeeze().cpu().numpy()
 
             self.total_times['Ext'] += time.time() - self.start
@@ -279,14 +266,14 @@ class MTMCT(object):
             # Multi-target Single-Camera Tracking ========================================================================
             # Separate features
             feat_count, feat = 0, {}
-            for cam in cams:
+            for cam in self.cams:
                 feat[cam] = batch_feat[feat_count:feat_count + len(detection[cam])]
                 feat_count += len(detection[cam])
 
             # Run Multi-target Single-Camera Tracking and online tracks
             online_tracks_raw = {}
-            for cam in cams:
-                online_tracks_raw[cam] = trackers[cam].update(cam, detection[cam], feat[cam])
+            for cam in self.cams:
+                online_tracks_raw[cam] = self.trackers[cam].update(cam, detection[cam], feat[cam])
 
             self.total_times['MTSC'] += time.time() - start
             start = time.time()
@@ -294,7 +281,7 @@ class MTMCT(object):
             # Prepare Multi-target Multi-Camera Tracking =================================================================
             # Filter tracks
             online_tracks_filtered = {}
-            for cam in cams:
+            for cam in self.cams:
                 online_tracks_filtered[cam] = []
                 for track in online_tracks_raw[cam]:
                     # If not activated
@@ -307,12 +294,12 @@ class MTMCT(object):
 
                     # Filter detection with small box size, Since gt does not include small boxes
                     w, h = track.tlwh[2:]
-                    if h * w <= img_h * img_w * opt.min_box_size:
+                    if h * w <= self.img_h * self.img_w * opt.min_box_size:
                         continue
 
                     # Filter detections around border, Since gt does not include boxes around border
                     x1, y1, x2, y2 = track.x1y1x2y2
-                    if x1 <= 5 or y1 <= 5 or x2 >= img_w - 5 or y2 >= img_h - 5:
+                    if x1 <= 5 or y1 <= 5 or x2 >= self.img_w - 5 or y2 >= self.img_h - 5:
                         continue
 
                     # Append
@@ -324,7 +311,7 @@ class MTMCT(object):
 
             # Merge
             online_tracks = []
-            for cam in cams:
+            for cam in self.cams:
                 online_tracks += online_tracks_filtered[cam]
 
             # Gather current tracking global ids
@@ -350,14 +337,14 @@ class MTMCT(object):
                         continue
 
                     # If the objects are not in overlapping region (i -> j)
-                    overlap_region = overlap_regions_cam2cam[online_tracks[i].cam][online_tracks[j].cam]
+                    overlap_region = self.overlap_regions_cam2cam[online_tracks[i].cam][online_tracks[j].cam]
                     x1, y1, x2, y2 = online_tracks[i].x1y1x2y2.astype(np.int32)
                     if overlap_region[y2, (x1 + x2) // 2] == 0:
                         p_dists[idx] = 10
                         continue
 
                     # If the objects are not in overlapping region (j -> i)
-                    overlap_region = overlap_regions_cam2cam[online_tracks[j].cam][online_tracks[i].cam]
+                    overlap_region = self.overlap_regions_cam2cam[online_tracks[j].cam][online_tracks[i].cam]
                     x1, y1, x2, y2 = online_tracks[j].x1y1x2y2.astype(np.int32)
                     if overlap_region[y2, (x1 + x2) // 2] == 0:
                         p_dists[idx] = 10
@@ -409,14 +396,14 @@ class MTMCT(object):
                                 if online_tracks[info[0]].global_id not in online_global_ids[online_tracks[tdx].cam]:
                                     # Assign global id, Collect
                                     online_tracks[tdx].global_id = info[1]
-                                    clusters_dict[info[1]].add_track(online_tracks[tdx])
+                                    self.clusters_dict[info[1]].add_track(online_tracks[tdx])
                                     break
 
             # Get remaining current tracks
             remain_tracks = [track for track in online_tracks if track.global_id is None]
 
             # Calculate pairwise distance between previous clusters and current clusters
-            dists = pairwise_tracks_dist(clusters_dict, remain_tracks, fdx, metric='cosine')
+            dists = pairwise_tracks_dist(self.clusters_dict, remain_tracks, fdx, metric='cosine')
 
             # Run Hungarian algorithm
             indices = linear_assignment(dists)
@@ -424,26 +411,26 @@ class MTMCT(object):
             # Match with thresholding
             for row, col in indices:
                 if dists[row, col] <= opt.mtmc_match_thr \
-                        and list(clusters_dict.keys())[row] not in online_global_ids[remain_tracks[col].cam]:
+                        and list(self.clusters_dict.keys())[row] not in online_global_ids[remain_tracks[col].cam]:
                     # Assign global id, Collect track
-                    remain_tracks[col].global_id = list(clusters_dict.keys())[row]
-                    clusters_dict[list(clusters_dict.keys())[row]].add_track(remain_tracks[col])
+                    remain_tracks[col].global_id = list(self.clusters_dict.keys())[row]
+                    self.clusters_dict[list(self.clusters_dict.keys())[row]].add_track(remain_tracks[col])
 
             # If not matched newly starts
             for remain_track in remain_tracks:
                 if remain_track.global_id is None:
                     # Assign global id, Collect track
-                    remain_track.global_id = next_global_id
-                    clusters_dict[next_global_id] = Cluster()
-                    clusters_dict[next_global_id].add_track(remain_track)
+                    remain_track.global_id = self.next_global_id
+                    self.clusters_dict[self.next_global_id] = Cluster()
+                    self.clusters_dict[self.next_global_id].add_track(remain_track)
 
                     # Increase
-                    next_global_id += 1
+                    self.next_global_id += 1
 
             # Delete too old cluster
-            del_key = [key for key in clusters_dict.keys() if fdx - clusters_dict[key].end_frame > opt.max_time_differ]
+            del_key = [key for key in self.clusters_dict.keys() if fdx - self.clusters_dict[key].end_frame > opt.max_time_differ]
             for key in del_key:
-                del clusters_dict[key]
+                del self.clusters_dict[key]
 
             self.total_times['MTMC'] += time.time() - start
 
@@ -457,23 +444,27 @@ class MTMCT(object):
                 left, top = cx - w / 2, cy - h / 2
 
                 # Filter with size, Since gt does not include small boxes
-                if w * h / img_w / img_h < 0.003 or 0.3 < w * h / img_w / img_h:
+                if w * h / self.img_w / self.img_h < 0.003 or 0.3 < w * h / self.img_w / self.img_h:
                     continue
-
-                print('%d %d %d %d %d %d %d -1 -1' % (int(track.cam[-1]), track.global_id, temp_align[track.cam][fdx],
-                                                      int(left), int(top), int(w), int(h)), file=result_txt)
-
+                result.append('%d %d %d %d %d %d %d -1 -1' % (int(track.cam[-1]), track.global_id, self.temp_align[track.cam][fdx],
+                                                      int(left), int(top), int(w), int(h)))
+                # print(, file=result_txt)
+        self.result_path = self.output_dir + 'mtmc_%s_%s.txt' % (opt.feat_ext_name, opt.avg_type)
+        with open(self.result_path, 'w') as result_txt:
+            for r in result:
+                print(r, file=result_txt)
+        print(f'结果已经写入到{self.result_path}')
         # Logging
         track_t, total_t = 0, 0
         print('%s_%s_%s' % (opt.det_name, opt.feat_ext_name, opt.avg_type))
         for key in self.total_times.keys():
-            print('%s: %05f' % (key, self.total_times[key] / (np.max(f_nums) + 1)))
-            track_t += self.total_times[key] / (np.max(f_nums) + 1) if key == 'MTSC' or key == 'MTMC' else 0
-            total_t += self.total_times[key] / (np.max(f_nums) + 1)
+            print('%s: %05f' % (key, self.total_times[key] / (np.max(self.f_nums) + 1)))
+            track_t += self.total_times[key] / (np.max(self.f_nums) + 1) if key == 'MTSC' or key == 'MTMC' else 0
+            total_t += self.total_times[key] / (np.max(self.f_nums) + 1)
         print('Tracking Time: %05f' % track_t)
         print('Total Time: %05f' % total_t)
 
-    def detect(self, batch_img, cams, valid_cam):
+    def detect(self, batch_img, valid_cam):
         self.start = time.time()
         # 目标检测阶段
         # Detect =====================================================================================================
@@ -483,7 +474,7 @@ class MTMCT(object):
         preds = non_max_suppression(preds, opt.conf_thres, opt.iou_thres,
                                     classes=opt.classes, agnostic=opt.agnostic_nms)
         # Insert empty results
-        for cam_index, cam in enumerate(cams):
+        for cam_index, cam in enumerate(self.cams):
             if not valid_cam[cam]:
                 preds.insert(cam_index, torch.zeros((0, 6)).cuda().half())
         self.total_times['Det'] += time.time() - self.start
