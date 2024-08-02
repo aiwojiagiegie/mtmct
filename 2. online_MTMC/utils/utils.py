@@ -84,6 +84,12 @@ def calc_ioa(boxes1, boxes2):
 
 
 def class_agnostic_nms(tracks):
+    '''
+    思路是先将bbox合到一起
+    计算ioa的值，这是一个矩阵，长宽均为tracks的长度
+    然后筛选出在非对角线上并且值大于0.25且最小的那个坐标
+    从tracks中删掉这个坐标
+    '''
     while True:
         # Decode
         boxes = np.concatenate([np.array(track.tlwh)[None, :] for track in tracks], axis=0)

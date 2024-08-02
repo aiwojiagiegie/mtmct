@@ -175,237 +175,182 @@ class MTMCT(object):
         self.img_h, self.img_w = opt.img_ori_size
         self.next_global_id, self.dunn_index_prev = 0, -1e5
         self.clusters_dict = {}
-    def run_mtmct(self):
-        result = []
-        # Run
-        for fdx in tqdm(range(0, np.max(self.f_nums) + 1)):
-            # Generate empty batches
-            batch_img = torch.zeros((len(self.cams), 3, self.img_size[0], self.img_size[1]), device='cuda').half()
-            batch_img_ori = torch.zeros((len(self.cams), 3, opt.img_ori_size[0], opt.img_ori_size[1]), device='cuda').half()
+        self.result = []
 
-            # Prepare images
-            valid_cam = {}
-            for cdx, cam in enumerate(self.cams):
-                # Read
-                valid_cam[cam] = True
-                path, img, img_ori, _ = self.datasets[cam].__next__(cam, self.temp_align[cam][fdx])
 
-                # Check 这里检查是否有这样的图片存在文件夹中，如果没有则跳过然后到下一个摄像头中
-                if img is None:
-                    valid_cam[cam] = False
+
+    def mtmct_online(self, fdx, online_tracks_raw):
+        start = time.time()
+        online_tracks_filtered = self.filter_online_tracks(online_tracks_raw)
+        # Merge
+        online_tracks = []
+        for cam in self.cams:
+            online_tracks += online_tracks_filtered[cam]
+        # Gather current tracking global ids
+        online_global_ids = {'c006': [], 'c007': [], 'c008': [], 'c009': []}
+        for track in online_tracks:
+            if track.global_id is not None:
+                online_global_ids[track.cam].append(track.global_id)
+        # Get features and calculate pairwise distances
+        online_feats = np.array([track.get_feature(mode=opt.get_feat_mode) for track in online_tracks])
+        p_dists = pdist(online_feats, metric='cosine')
+        p_dists = np.clip(p_dists, 0, 1)
+        # Apply constraints
+        for i in range(len(online_tracks)):
+            for j in range(i + 1, len(online_tracks)):
+                # Covert index
+                idx = len(online_tracks) * i + j - ((i + 2) * (i + 1)) // 2
+
+                # If same camera
+                if online_tracks[i].cam == online_tracks[j].cam:
+                    p_dists[idx] = 10
                     continue
 
-                # Store 把读取到的图片存到batch_img中并且序列化
-                batch_img[cdx] = torch.tensor(img / 255.0, device='cuda').half()
-                batch_img_ori[cdx] = torch.tensor(img_ori.transpose((2, 0, 1)) / 255.0, device='cuda').half()
+                # If the objects are not in overlapping region (i -> j)
+                overlap_region = self.overlap_regions_cam2cam[online_tracks[i].cam][online_tracks[j].cam]
+                x1, y1, x2, y2 = online_tracks[i].x1y1x2y2.astype(np.int32)
+                if overlap_region[y2, (x1 + x2) // 2] == 0:
+                    p_dists[idx] = 10
+                    continue
 
-            preds = self.detect(batch_img, valid_cam)
+                # If the objects are not in overlapping region (j -> i)
+                overlap_region = self.overlap_regions_cam2cam[online_tracks[j].cam][online_tracks[i].cam]
+                x1, y1, x2, y2 = online_tracks[j].x1y1x2y2.astype(np.int32)
+                if overlap_region[y2, (x1 + x2) // 2] == 0:
+                    p_dists[idx] = 10
+                    continue
+        # Clustering =================================================================================================
+        # Generate linkage matrix with hierarchical clustering
+        linkage_matrix = linkage(p_dists, method='complete')
+        ranked_dists = np.sort(list(set(list(linkage_matrix[:, 2]))), axis=None)
+        # Observe clusters with adjusting a distance threshold and calculate dunn index
+        clusters, dunn_indices, c_dists = [], [], squareform(p_dists)
+        for rdx in range(2, ranked_dists.shape[0] + 1):
+            if ranked_dists[-rdx] <= opt.mtmc_match_thr:
+                clusters.append(fcluster(linkage_matrix, ranked_dists[-rdx] + 1e-5, criterion='distance') - 1)
+                dunn_indices.append(dunn(clusters[-1], c_dists))
+        if len(clusters) == 0:
+            cluster = fcluster(linkage_matrix, ranked_dists[0] - 1e-5, criterion='distance') - 1
+        else:
+            # Choose the most connected cluster except inappropriate pairs
+            # Get the index of the dunn indices where the values suddenly jump.
+            dunn_indices.insert(0, 0)
+            pos = np.argmax(np.diff(dunn_indices))
+            cluster = clusters[pos]
+        # Run Multi-target Multi-Camera Tracking =====================================================================
+        # Initialize
+        num_cluster = len(list(set(list(cluster))))
+        # Assign global id to new tracks using other tracks in the same cluster
+        for cam_index in range(num_cluster):
+            track_idx = np.where(cluster == cam_index)[0]
 
-            # Prepare feature extraction =================================================================================
-            # Prepare patches for feature extraction model
-            batch_feat, detection = self.reid(batch_img, batch_img_ori, preds)
+            # Check index and global id of tracks in same cluster
+            infos = []
+            for tdx in track_idx:
+                if online_tracks[tdx].global_id is not None:
+                    infos.append([tdx, online_tracks[tdx].global_id])
 
-            # Multi-target Single-Camera Tracking ========================================================================
-            # Separate features
-            start = time.time()
-            feat_count, feat = 0, {}
-            for cam in self.cams:
-                feat[cam] = batch_feat[feat_count:feat_count + len(detection[cam])]
-                feat_count += len(detection[cam])
-
-            # Run Multi-target Single-Camera Tracking and online tracks
-            online_tracks_raw = {}
-            for cam in self.cams:
-                online_tracks_raw[cam] = self.trackers[cam].update(cam, detection[cam], feat[cam])
-
-            self.total_times['MTSC'] += time.time() - start
-            start = time.time()
-
-            # Prepare Multi-target Multi-Camera Tracking =================================================================
-            # Filter tracks
-            online_tracks_filtered = {}
-            for cam in self.cams:
-                online_tracks_filtered[cam] = []
-                for track in online_tracks_raw[cam]:
-                    # If not activated
-                    if not track.is_activated:
-                        continue
-
-                    # If it has low confidence score
-                    if track.obs_history[-1][2] <= opt.det_high_thresh:
-                        continue
-
-                    # Filter detection with small box size, Since gt does not include small boxes
-                    w, h = track.tlwh[2:]
-                    if h * w <= self.img_h * self.img_w * opt.min_box_size:
-                        continue
-
-                    # Filter detections around border, Since gt does not include boxes around border
-                    x1, y1, x2, y2 = track.x1y1x2y2
-                    if x1 <= 5 or y1 <= 5 or x2 >= self.img_w - 5 or y2 >= self.img_h - 5:
-                        continue
-
-                    # Append
-                    online_tracks_filtered[cam].append(track)
-
-                # Class agnostic NMS, Since gt does not include overlapped boxes
-                if 2 <= len(online_tracks_filtered[cam]):
-                    online_tracks_filtered[cam] = class_agnostic_nms(online_tracks_filtered[cam])
-
-            # Merge
-            online_tracks = []
-            for cam in self.cams:
-                online_tracks += online_tracks_filtered[cam]
-
-            # Gather current tracking global ids
-            online_global_ids = {'c006': [], 'c007': [], 'c008': [], 'c009': []}
-            for track in online_tracks:
-                if track.global_id is not None:
-                    online_global_ids[track.cam].append(track.global_id)
-
-            # Get features and calculate pairwise distances
-            online_feats = np.array([track.get_feature(mode=opt.get_feat_mode) for track in online_tracks])
-            p_dists = pdist(online_feats, metric='cosine')
-            p_dists = np.clip(p_dists, 0, 1)
-
-            # Apply constraints
-            for i in range(len(online_tracks)):
-                for j in range(i + 1, len(online_tracks)):
-                    # Covert index
-                    idx = len(online_tracks) * i + j - ((i + 2) * (i + 1)) // 2
-
-                    # If same camera
-                    if online_tracks[i].cam == online_tracks[j].cam:
-                        p_dists[idx] = 10
-                        continue
-
-                    # If the objects are not in overlapping region (i -> j)
-                    overlap_region = self.overlap_regions_cam2cam[online_tracks[i].cam][online_tracks[j].cam]
-                    x1, y1, x2, y2 = online_tracks[i].x1y1x2y2.astype(np.int32)
-                    if overlap_region[y2, (x1 + x2) // 2] == 0:
-                        p_dists[idx] = 10
-                        continue
-
-                    # If the objects are not in overlapping region (j -> i)
-                    overlap_region = self.overlap_regions_cam2cam[online_tracks[j].cam][online_tracks[i].cam]
-                    x1, y1, x2, y2 = online_tracks[j].x1y1x2y2.astype(np.int32)
-                    if overlap_region[y2, (x1 + x2) // 2] == 0:
-                        p_dists[idx] = 10
-                        continue
-
-            # Clustering =================================================================================================
-            # Generate linkage matrix with hierarchical clustering
-            linkage_matrix = linkage(p_dists, method='complete')
-            ranked_dists = np.sort(list(set(list(linkage_matrix[:, 2]))), axis=None)
-
-            # Observe clusters with adjusting a distance threshold and calculate dunn index
-            clusters, dunn_indices, c_dists = [], [], squareform(p_dists)
-            for rdx in range(2, ranked_dists.shape[0] + 1):
-                if ranked_dists[-rdx] <= opt.mtmc_match_thr:
-                    clusters.append(fcluster(linkage_matrix, ranked_dists[-rdx] + 1e-5, criterion='distance') - 1)
-                    dunn_indices.append(dunn(clusters[-1], c_dists))
-
-            if len(clusters) == 0:
-                cluster = fcluster(linkage_matrix, ranked_dists[0] - 1e-5, criterion='distance') - 1
-            else:
-                # Choose the most connected cluster except inappropriate pairs
-                # Get the index of the dunn indices where the values suddenly jump.
-                dunn_indices.insert(0, 0)
-                pos = np.argmax(np.diff(dunn_indices))
-                cluster = clusters[pos]
-
-            # Run Multi-target Multi-Camera Tracking =====================================================================
-            # Initialize
-            num_cluster = len(list(set(list(cluster))))
-
-            # Assign global id to new tracks using other tracks in the same cluster
-            for cam_index in range(num_cluster):
-                track_idx = np.where(cluster == cam_index)[0]
-
-                # Check index and global id of tracks in same cluster
-                infos = []
+            # If some tracks in the cluster already has global id, assign same global id to new tracks
+            if len(infos) > 0:
+                # Assign global id, Collect tracks, Update feature
                 for tdx in track_idx:
-                    if online_tracks[tdx].global_id is not None:
-                        infos.append([tdx, online_tracks[tdx].global_id])
+                    if online_tracks[tdx].global_id is None:
+                        # Sort and get global id with the node with minimum distance
+                        sorted_infos = sorted(copy.deepcopy(infos), key=lambda x: c_dists[tdx, x[0]])
+                        for info in sorted_infos:
+                            if online_tracks[info[0]].global_id not in online_global_ids[online_tracks[tdx].cam]:
+                                # Assign global id, Collect
+                                online_tracks[tdx].global_id = info[1]
+                                self.clusters_dict[info[1]].add_track(online_tracks[tdx])
+                                break
+        # Get remaining current tracks
+        remain_tracks = [track for track in online_tracks if track.global_id is None]
+        # Calculate pairwise distance between previous clusters and current clusters
+        dists = pairwise_tracks_dist(self.clusters_dict, remain_tracks, fdx, metric='cosine')
+        # Run Hungarian algorithm
+        indices = linear_assignment(dists)
+        # Match with thresholding
+        for row, col in indices:
+            if dists[row, col] <= opt.mtmc_match_thr \
+                    and list(self.clusters_dict.keys())[row] not in online_global_ids[remain_tracks[col].cam]:
+                # Assign global id, Collect track
+                remain_tracks[col].global_id = list(self.clusters_dict.keys())[row]
+                self.clusters_dict[list(self.clusters_dict.keys())[row]].add_track(remain_tracks[col])
+        # If not matched newly starts
+        for remain_track in remain_tracks:
+            if remain_track.global_id is None:
+                # Assign global id, Collect track
+                remain_track.global_id = self.next_global_id
+                self.clusters_dict[self.next_global_id] = Cluster()
+                self.clusters_dict[self.next_global_id].add_track(remain_track)
 
-                # If some tracks in the cluster already has global id, assign same global id to new tracks
-                if len(infos) > 0:
-                    # Assign global id, Collect tracks, Update feature
-                    for tdx in track_idx:
-                        if online_tracks[tdx].global_id is None:
-                            # Sort and get global id with the node with minimum distance
-                            sorted_infos = sorted(copy.deepcopy(infos), key=lambda x: c_dists[tdx, x[0]])
-                            for info in sorted_infos:
-                                if online_tracks[info[0]].global_id not in online_global_ids[online_tracks[tdx].cam]:
-                                    # Assign global id, Collect
-                                    online_tracks[tdx].global_id = info[1]
-                                    self.clusters_dict[info[1]].add_track(online_tracks[tdx])
-                                    break
-
-            # Get remaining current tracks
-            remain_tracks = [track for track in online_tracks if track.global_id is None]
-
-            # Calculate pairwise distance between previous clusters and current clusters
-            dists = pairwise_tracks_dist(self.clusters_dict, remain_tracks, fdx, metric='cosine')
-
-            # Run Hungarian algorithm
-            indices = linear_assignment(dists)
-
-            # Match with thresholding
-            for row, col in indices:
-                if dists[row, col] <= opt.mtmc_match_thr \
-                        and list(self.clusters_dict.keys())[row] not in online_global_ids[remain_tracks[col].cam]:
-                    # Assign global id, Collect track
-                    remain_tracks[col].global_id = list(self.clusters_dict.keys())[row]
-                    self.clusters_dict[list(self.clusters_dict.keys())[row]].add_track(remain_tracks[col])
-
-            # If not matched newly starts
-            for remain_track in remain_tracks:
-                if remain_track.global_id is None:
-                    # Assign global id, Collect track
-                    remain_track.global_id = self.next_global_id
-                    self.clusters_dict[self.next_global_id] = Cluster()
-                    self.clusters_dict[self.next_global_id].add_track(remain_track)
-
-                    # Increase
-                    self.next_global_id += 1
-
-            # Delete too old cluster
-            del_key = [key for key in self.clusters_dict.keys() if fdx - self.clusters_dict[key].end_frame > opt.max_time_differ]
-            for key in del_key:
-                del self.clusters_dict[key]
-
-            self.total_times['MTMC'] += time.time() - start
-
-            # Logging
-            for track in online_tracks:
-                left, top, w, h = track.tlwh
-
-                # Expand box, Since gt boxes are not tightly annotated around objects and quite larger than objects
-                cx, cy = left + w / 2, top + h / 2
-                w, h = w * 1.45, h * 1.45
-                left, top = cx - w / 2, cy - h / 2
-
-                # Filter with size, Since gt does not include small boxes
-                if w * h / self.img_w / self.img_h < 0.003 or 0.3 < w * h / self.img_w / self.img_h:
-                    continue
-                result.append('%d %d %d %d %d %d %d -1 -1' % (int(track.cam[-1]), track.global_id, self.temp_align[track.cam][fdx],
-                                                      int(left), int(top), int(w), int(h)))
-                # print(, file=result_txt)
-        self.result_path = self.output_dir + 'mtmc_%s_%s.txt' % (opt.feat_ext_name, opt.avg_type)
-        with open(self.result_path, 'w') as result_txt:
-            for r in result:
-                print(r, file=result_txt)
-        print(f'结果已经写入到{self.result_path}')
+                # Increase
+                self.next_global_id += 1
+        # Delete too old cluster
+        del_key = [key for key in self.clusters_dict.keys() if
+                   fdx - self.clusters_dict[key].end_frame > opt.max_time_differ]
+        for key in del_key:
+            del self.clusters_dict[key]
+        self.total_times['MTMC'] += time.time() - start
         # Logging
-        track_t, total_t = 0, 0
-        print('%s_%s_%s' % (opt.det_name, opt.feat_ext_name, opt.avg_type))
-        for key in self.total_times.keys():
-            print('%s: %05f' % (key, self.total_times[key] / (np.max(self.f_nums) + 1)))
-            track_t += self.total_times[key] / (np.max(self.f_nums) + 1) if key == 'MTSC' or key == 'MTMC' else 0
-            total_t += self.total_times[key] / (np.max(self.f_nums) + 1)
-        print('Tracking Time: %05f' % track_t)
-        print('Total Time: %05f' % total_t)
+        for track in online_tracks:
+            left, top, w, h = track.tlwh
+
+            # Expand box, Since gt boxes are not tightly annotated around objects and quite larger than objects
+            cx, cy = left + w / 2, top + h / 2
+            w, h = w * 1.45, h * 1.45
+            left, top = cx - w / 2, cy - h / 2
+
+            # Filter with size, Since gt does not include small boxes
+            if w * h / self.img_w / self.img_h < 0.003 or 0.3 < w * h / self.img_w / self.img_h:
+                continue
+            self.result.append(
+                '%d %d %d %d %d %d %d -1 -1' % (int(track.cam[-1]), track.global_id, self.temp_align[track.cam][fdx],
+                                                int(left), int(top), int(w), int(h)))
+
+    def filter_online_tracks(self, online_tracks_raw):
+        online_tracks_filtered = {}
+        for cam in self.cams:
+            online_tracks_filtered[cam] = []
+            for track in online_tracks_raw[cam]:
+                # If not activated
+                if not track.is_activated:
+                    continue
+
+                # If it has low confidence score
+                if track.obs_history[-1][2] <= opt.det_high_thresh:
+                    continue
+
+                # Filter detection with small box size, Since gt does not include small boxes
+                w, h = track.tlwh[2:]
+                if h * w <= self.img_h * self.img_w * opt.min_box_size:
+                    continue
+
+                # Filter detections around border, Since gt does not include boxes around border
+                x1, y1, x2, y2 = track.x1y1x2y2
+                if x1 <= 5 or y1 <= 5 or x2 >= self.img_w - 5 or y2 >= self.img_h - 5:
+                    continue
+
+                # Append
+                online_tracks_filtered[cam].append(track)
+
+            # Class agnostic NMS, Since gt does not include overlapped boxes
+            if 2 <= len(online_tracks_filtered[cam]):
+                online_tracks_filtered[cam] = class_agnostic_nms(online_tracks_filtered[cam])
+        return online_tracks_filtered
+
+    def MTSCT_online(self, batch_feat, detection):
+        start = time.time()
+        feat_count, feat = 0, {}
+        for cam in self.cams:
+            feat[cam] = batch_feat[feat_count:feat_count + len(detection[cam])]
+            feat_count += len(detection[cam])
+        # Run Multi-target Single-Camera Tracking and online tracks
+        online_tracks_raw = {}
+        for cam in self.cams:
+            online_tracks_raw[cam] = self.trackers[cam].update(cam, detection[cam], feat[cam])
+        self.total_times['MTSC'] += time.time() - start
+        return online_tracks_raw
 
     def reid(self, batch_img, batch_img_ori, preds):
         self.start = time.time()
@@ -472,12 +417,58 @@ class MTMCT(object):
                 preds.insert(cam_index, torch.zeros((0, 6)).cuda().half())
         self.total_times['Det'] += time.time() - self.start
         return preds
+    def run_mtmct(self):
+        # Run
+        for fdx in tqdm(range(0, np.max(self.f_nums) + 1)):
+            # Generate empty batches
+            batch_img = torch.zeros((len(self.cams), 3, self.img_size[0], self.img_size[1]), device='cuda').half()
+            batch_img_ori = torch.zeros((len(self.cams), 3, opt.img_ori_size[0], opt.img_ori_size[1]), device='cuda').half()
 
+            # 准备图像数据
+            valid_cam = {}
+            for cdx, cam in enumerate(self.cams):
+                # Read
+                valid_cam[cam] = True
+                path, img, img_ori, _ = self.datasets[cam].__next__(cam, self.temp_align[cam][fdx])
+
+                # Check 这里检查是否有这样的图片存在文件夹中，如果没有则跳过然后到下一个摄像头中
+                if img is None:
+                    valid_cam[cam] = False
+                    continue
+
+                # Store 把读取到的图片存到batch_img中并且序列化
+                batch_img[cdx] = torch.tensor(img / 255.0, device='cuda').half()
+                batch_img_ori[cdx] = torch.tensor(img_ori.transpose((2, 0, 1)) / 255.0, device='cuda').half()
+            # 目标检测
+            preds = self.detect(batch_img, valid_cam)
+
+            # REID
+            batch_feat, detection = self.reid(batch_img, batch_img_ori, preds)
+
+            # 单摄像头跟踪
+            online_tracks_raw = self.MTSCT_online(batch_feat, detection)
+
+            # 跨摄像头跟踪
+            self.mtmct_online(fdx, online_tracks_raw)
+        self.result_path = self.output_dir + 'mtmc_%s_%s.txt' % (opt.feat_ext_name, opt.avg_type)
+        with open(self.result_path, 'w') as result_txt:
+            for r in self.result:
+                print(r, file=result_txt)
+        print(f'结果已经写入到{self.result_path}')
+        # Logging
+        track_t, total_t = 0, 0
+        print('%s_%s_%s' % (opt.det_name, opt.feat_ext_name, opt.avg_type))
+        for key in self.total_times.keys():
+            print('%s: %05f' % (key, self.total_times[key] / (np.max(self.f_nums) + 1)))
+            track_t += self.total_times[key] / (np.max(self.f_nums) + 1) if key == 'MTSC' or key == 'MTMC' else 0
+            total_t += self.total_times[key] / (np.max(self.f_nums) + 1)
+        print('Tracking Time: %05f' % track_t)
+        print('Total Time: %05f' % total_t)
 
 if __name__ == '__main__':
     mtmct = MTMCT(opt)
     with torch.no_grad():
         mtmct.run_mtmct()
-    calculate_results('outputs/ground_truth_validation.txt','outputs/yolov7-e6e/mtmc_resnet50_ibn_a_gap.txt')
+    calculate_results('outputs/ground_truth_validation.txt',mtmct.result_path)
 
 
