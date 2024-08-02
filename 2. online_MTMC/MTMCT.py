@@ -176,14 +176,12 @@ class MTMCT(object):
         self.next_global_id, self.dunn_index_prev = 0, -1e5
         self.clusters_dict = {}
     def run_mtmct(self):
-        # with open(self.output_dir + 'mtmc_%s_%s.txt' % (opt.feat_ext_name, opt.avg_type), 'w') as f:
         result = []
         # Run
         for fdx in tqdm(range(0, np.max(self.f_nums) + 1)):
             # Generate empty batches
             batch_img = torch.zeros((len(self.cams), 3, self.img_size[0], self.img_size[1]), device='cuda').half()
             batch_img_ori = torch.zeros((len(self.cams), 3, opt.img_ori_size[0], opt.img_ori_size[1]), device='cuda').half()
-            batch_patch = torch.zeros((100 * len(self.cams), 3, opt.patch_size[0], opt.patch_size[1]), device='cuda').half()
 
             # Prepare images
             valid_cam = {}
@@ -205,66 +203,11 @@ class MTMCT(object):
 
             # Prepare feature extraction =================================================================================
             # Prepare patches for feature extraction model
-            det_count, detection = 0, {}
-            for pdx, pred in enumerate(preds):
-                # Prepare dictionary to store detection results
-                detection[self.cams[pdx]] = np.zeros((0, 5))
-
-                # If there are valid predictions
-                if len(pred) > 0:
-                    # Rescale boxes from img_size to im0s size
-                    debug_pred = pred[:, :4]
-                    pred[:, :4] = scale_coords(batch_img.shape[2:], pred[:, :4], batch_img_ori.shape[2:4])
-                    debug_pred = pred[:, :4]
-                    # Post-process detections xyxy应该分别是bbox的左上角和右下角的横纵坐标？
-                    for *xyxy, conf, _ in reversed(pred):
-                        # Convert to integerz
-                        x1, y1 = round(xyxy[0].item()), round(xyxy[1].item())
-                        x2, y2 = round(xyxy[2].item()), round(xyxy[3].item())
-
-                        # Filter detections with RoI mask
-                        target = self.roi_masks[self.cams[pdx]][min(y2 + 1, self.img_h) - 1, (max(x1, 0) + min(x2 + 1, self.img_w)) // 2]
-                        if target == 0:
-                            continue
-
-                        # Filter detection with box size
-                        if (x2 - x1) * (y2 - y1) <= self.img_h * self.img_w * opt.min_box_size / 2:
-                            continue
-
-                        # Add detections
-                        new_box = np.array([(x1 + x2) / 2, (y1 + y2) / 2, (x2 - x1), (y2 - y1), conf.item()])
-                        new_box = new_box[np.newaxis, :]
-                        detection[self.cams[pdx]] = np.concatenate([detection[self.cams[pdx]], new_box], axis=0)
-
-                        # Get patch
-                        patch = batch_img_ori[pdx][:, max(y1, 0):min(y2 + 1, self.img_h), max(x1, 0):min(x2 + 1, self.img_w)]
-                        patch = self.normalize(letterbox(patch))
-                        # 如果是c008则水平翻转
-                        batch_patch[det_count] = torch.fliplr(patch) if self.cams[pdx] == 'c008' else patch
-                        det_count += 1
-
-            # Extract features
-            with torch.autocast('cuda'):
-                batch_patch = batch_patch[:det_count]
-                batch_feat = self.feat_ext_model(batch_patch)
-            batch_feat = batch_feat.squeeze().cpu().numpy()
-
-            self.total_times['Ext'] += time.time() - self.start
-            start = time.time()
-
-            # detections[fdx] = detection
-            # batch_feats[fdx] = batch_feat
-
-            # with open('./outputs/yolov7-e6e/detections.pickle', 'wb') as f:
-            #     pickle.dump(detections, f, protocol=pickle.HIGHEST_PROTOCOL)
-            # with open('./outputs/yolov7-e6e/batch_feats_res101.pickle', 'wb') as f:
-            #     pickle.dump(batch_feats, f, protocol=pickle.HIGHEST_PROTOCOL)
-
-            # detection = detections[fdx]
-            # batch_feat = batch_feats[fdx]
+            batch_feat, detection = self.reid(batch_img, batch_img_ori, preds)
 
             # Multi-target Single-Camera Tracking ========================================================================
             # Separate features
+            start = time.time()
             feat_count, feat = 0, {}
             for cam in self.cams:
                 feat[cam] = batch_feat[feat_count:feat_count + len(detection[cam])]
@@ -464,6 +407,56 @@ class MTMCT(object):
         print('Tracking Time: %05f' % track_t)
         print('Total Time: %05f' % total_t)
 
+    def reid(self, batch_img, batch_img_ori, preds):
+        self.start = time.time()
+        batch_patch = torch.zeros((100 * len(self.cams), 3, opt.patch_size[0], opt.patch_size[1]), device='cuda').half()
+        det_count, detection = 0, {}
+        for pdx, pred in enumerate(preds):
+            # Prepare dictionary to store detection results
+            detection[self.cams[pdx]] = np.zeros((0, 5))
+
+            # If there are valid predictions
+            if len(pred) > 0:
+                # Rescale boxes from img_size to im0s size
+                debug_pred = pred[:, :4]
+                pred[:, :4] = scale_coords(batch_img.shape[2:], pred[:, :4], batch_img_ori.shape[2:4])
+                debug_pred = pred[:, :4]
+                # Post-process detections xyxy应该分别是bbox的左上角和右下角的横纵坐标？
+                for *xyxy, conf, _ in reversed(pred):
+                    # Convert to integerz
+                    x1, y1 = round(xyxy[0].item()), round(xyxy[1].item())
+                    x2, y2 = round(xyxy[2].item()), round(xyxy[3].item())
+
+                    # 根据ROI过滤掉不在ROI内的检测
+                    target = self.roi_masks[self.cams[pdx]][
+                        min(y2 + 1, self.img_h) - 1, (max(x1, 0) + min(x2 + 1, self.img_w)) // 2]
+                    if target == 0:
+                        continue
+
+                    # 过滤掉小数据
+                    if (x2 - x1) * (y2 - y1) <= self.img_h * self.img_w * opt.min_box_size / 2:
+                        continue
+
+                    # Add detections
+                    new_box = np.array([(x1 + x2) / 2, (y1 + y2) / 2, (x2 - x1), (y2 - y1), conf.item()])
+                    new_box = new_box[np.newaxis, :]
+                    detection[self.cams[pdx]] = np.concatenate([detection[self.cams[pdx]], new_box], axis=0)
+
+                    # Get patch
+                    patch = batch_img_ori[pdx][:, max(y1, 0):min(y2 + 1, self.img_h),
+                            max(x1, 0):min(x2 + 1, self.img_w)]
+                    patch = self.normalize(letterbox(patch))
+                    # 如果是c008则水平翻转
+                    batch_patch[det_count] = torch.fliplr(patch) if self.cams[pdx] == 'c008' else patch
+                    det_count += 1
+        # Extract features
+        with torch.autocast('cuda'):
+            batch_patch = batch_patch[:det_count]
+            batch_feat = self.feat_ext_model(batch_patch)
+        batch_feat = batch_feat.squeeze().cpu().numpy()
+        self.total_times['Ext'] += time.time() - self.start
+        return batch_feat, detection
+
     def detect(self, batch_img, valid_cam):
         self.start = time.time()
         # 目标检测阶段
@@ -478,7 +471,6 @@ class MTMCT(object):
             if not valid_cam[cam]:
                 preds.insert(cam_index, torch.zeros((0, 6)).cuda().half())
         self.total_times['Det'] += time.time() - self.start
-        self.start = time.time()
         return preds
 
 
