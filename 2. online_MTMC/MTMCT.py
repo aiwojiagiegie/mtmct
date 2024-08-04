@@ -18,6 +18,8 @@ from models.feature_extractor import FeatureExtractor
 from utils.scipy_linear_assignment import linear_assignment
 from utils.general import check_img_size, non_max_suppression, scale_coords
 from utils.utils import letterbox, class_agnostic_nms, pairwise_tracks_dist
+
+
 class Cluster:
     def __init__(self):
         super(Cluster, self).__init__()
@@ -36,13 +38,15 @@ class Cluster:
             feat = np.concatenate([track.get_feature(opt.get_feat_mode) for track in self.tracks], axis=0)
         return feat
 
-    @ property
+    @property
     def end_frame(self):
         return np.max([track.end_frame for track in self.tracks])
 
-    @ property
+    @property
     def cam_list(self):
         return [track.cam for track in self.tracks]
+
+
 def prepare_align(cams, f_nums):
     temp_align = {}
     for cam in cams:
@@ -117,6 +121,8 @@ def prepare_align(cams, f_nums):
             elif cam == 'c009':
                 temp_align[cam][i] = i - 9
     return temp_align
+
+
 class MTMCT(object):
     def __init__(self, opt):
         self.result_path = None
@@ -161,8 +167,9 @@ class MTMCT(object):
             self.roi_masks[cam] = cv2.imread('./preliminary/rois/%s.png' % cam, cv2.IMREAD_GRAYSCALE)
             self.overlap_regions_cam2cam[cam] = {}
             for cam_ in self.cams:
-                self.overlap_regions_cam2cam[cam][cam_] = cv2.imread('./preliminary/overlap_zones/%s_%s.png' % (cam, cam_),
-                                                                cv2.IMREAD_GRAYSCALE) if cam_ != cam else None
+                self.overlap_regions_cam2cam[cam][cam_] = cv2.imread(
+                    './preliminary/overlap_zones/%s_%s.png' % (cam, cam_),
+                    cv2.IMREAD_GRAYSCALE) if cam_ != cam else None
         # Warm-up models
         with torch.autocast('cuda'):
             for _ in range(10):
@@ -176,8 +183,6 @@ class MTMCT(object):
         self.next_global_id, self.dunn_index_prev = 0, -1e5
         self.clusters_dict = {}
         self.result = []
-
-
 
     def mtmct_online(self, fdx, online_tracks_raw):
         start = time.time()
@@ -417,12 +422,14 @@ class MTMCT(object):
                 preds.insert(cam_index, torch.zeros((0, 6)).cuda().half())
         self.total_times['Det'] += time.time() - self.start
         return preds
+
     def run_mtmct(self):
         # Run
         for fdx in tqdm(range(0, np.max(self.f_nums) + 1)):
             # Generate empty batches
             batch_img = torch.zeros((len(self.cams), 3, self.img_size[0], self.img_size[1]), device='cuda').half()
-            batch_img_ori = torch.zeros((len(self.cams), 3, opt.img_ori_size[0], opt.img_ori_size[1]), device='cuda').half()
+            batch_img_ori = torch.zeros((len(self.cams), 3, opt.img_ori_size[0], opt.img_ori_size[1]),
+                                        device='cuda').half()
 
             # 准备图像数据
             valid_cam = {}
@@ -465,10 +472,9 @@ class MTMCT(object):
         print('Tracking Time: %05f' % track_t)
         print('Total Time: %05f' % total_t)
 
+
 if __name__ == '__main__':
     mtmct = MTMCT(opt)
     with torch.no_grad():
         mtmct.run_mtmct()
-    calculate_results('outputs/ground_truth_validation.txt',mtmct.result_path)
-
-
+    calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
