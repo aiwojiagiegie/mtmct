@@ -54,3 +54,12 @@ def embedding_distance(tracks, detections, metric='cosine'):
     cost_matrix = np.maximum(0.0, cdist(track_features, det_features, metric))
 
     return cost_matrix
+if __name__ == '__main__':
+    # onker-Volgenant 算法，也称为拉普拉斯修正匈牙利算法（LAPJV），
+    # 是一种用于解决线性分配问题的高效算法。
+    # 线性分配问题通常描述为：
+    # 有等量的工作和工人，每个工人完成每项工作的成本不同，如何分配工作使得总成本最低。
+    # 这个问题可以通过一个成本矩阵来表示，其中矩阵的每个元素表示对应工人完成对应工作的成本。
+    cost_matrix=np.asarray([[9,2,7,8],[6,4,3,7],[5,8,1,8],[7,6,9,4]])
+    cost, x, y = lap.lapjv(cost_matrix, extend_cost=True, cost_limit=8)
+    print(1)

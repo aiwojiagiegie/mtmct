@@ -199,31 +199,9 @@ class MTMCT(object):
         # Get features and calculate pairwise distances
         online_feats = np.array([track.get_feature(mode=opt.get_feat_mode) for track in online_tracks])
         p_dists = pdist(online_feats, metric='cosine')
-        p_dists = np.clip(p_dists, 0, 1)
+        p_dists = np.clip(p_dists, 0, 1)  # 归一化
         # Apply constraints
-        for i in range(len(online_tracks)):
-            for j in range(i + 1, len(online_tracks)):
-                # Covert index
-                idx = len(online_tracks) * i + j - ((i + 2) * (i + 1)) // 2
-
-                # If same camera
-                if online_tracks[i].cam == online_tracks[j].cam:
-                    p_dists[idx] = 10
-                    continue
-
-                # If the objects are not in overlapping region (i -> j)
-                overlap_region = self.overlap_regions_cam2cam[online_tracks[i].cam][online_tracks[j].cam]
-                x1, y1, x2, y2 = online_tracks[i].x1y1x2y2.astype(np.int32)
-                if overlap_region[y2, (x1 + x2) // 2] == 0:
-                    p_dists[idx] = 10
-                    continue
-
-                # If the objects are not in overlapping region (j -> i)
-                overlap_region = self.overlap_regions_cam2cam[online_tracks[j].cam][online_tracks[i].cam]
-                x1, y1, x2, y2 = online_tracks[j].x1y1x2y2.astype(np.int32)
-                if overlap_region[y2, (x1 + x2) // 2] == 0:
-                    p_dists[idx] = 10
-                    continue
+        self.filter_tracks_by_overlap(online_tracks, p_dists)
         # Clustering =================================================================================================
         # Generate linkage matrix with hierarchical clustering
         linkage_matrix = linkage(p_dists, method='complete')
@@ -312,6 +290,32 @@ class MTMCT(object):
             self.result.append(
                 '%d %d %d %d %d %d %d -1 -1' % (int(track.cam[-1]), track.global_id, self.temp_align[track.cam][fdx],
                                                 int(left), int(top), int(w), int(h)))
+
+    def filter_tracks_by_overlap(self, online_tracks, p_dists):
+        for i in range(len(online_tracks)):
+            for j in range(i + 1, len(online_tracks)):
+                # Covert index
+                idx = len(online_tracks) * i + j - ((i + 2) * (i + 1)) // 2
+
+                # If same camera
+                if online_tracks[i].cam == online_tracks[j].cam:
+                    p_dists[idx] = 10
+                    continue
+
+                # If the objects are not in overlapping region (i -> j)
+                # 根据摄像头与摄像头之间的overlap区域过滤
+                overlap_region = self.overlap_regions_cam2cam[online_tracks[i].cam][online_tracks[j].cam]
+                x1, y1, x2, y2 = online_tracks[i].x1y1x2y2.astype(np.int32)
+                if overlap_region[y2, (x1 + x2) // 2] == 0:
+                    p_dists[idx] = 10
+                    continue
+
+                # If the objects are not in overlapping region (j -> i)
+                overlap_region = self.overlap_regions_cam2cam[online_tracks[j].cam][online_tracks[i].cam]
+                x1, y1, x2, y2 = online_tracks[j].x1y1x2y2.astype(np.int32)
+                if overlap_region[y2, (x1 + x2) // 2] == 0:
+                    p_dists[idx] = 10
+                    continue
 
     def filter_online_tracks(self, online_tracks_raw):
         online_tracks_filtered = {}
