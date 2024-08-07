@@ -197,9 +197,9 @@ def run_mtmc():
     next_global_id, dunn_index_prev = 0, -1e5
     clusters_dict = {}
 
-    # with open('./outputs/yolov7-e6e/detections.pickle', 'rb') as f:
+    # with open('./outputs/result/detections.pickle', 'rb') as f:
     #     detections = pickle.load(f)
-    # with open('./outputs/yolov7-e6e/batch_feats_res101.pickle', 'rb') as f:
+    # with open('./outputs/result/batch_feats_res101.pickle', 'rb') as f:
     #     batch_feats = pickle.load(f)
 
     # Run

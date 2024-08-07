@@ -115,9 +115,9 @@ def run_mtmc():
     clusters_dict = {}
 
     # detections, batch_feats = {}, {}
-    # with open('./outputs/yolov7-e6e/detections.pickle', 'rb') as f:
+    # with open('./outputs/result/detections.pickle', 'rb') as f:
     #     detections = pickle.load(f)
-    # with open('./outputs/yolov7-e6e/batch_feats_res101.pickle', 'rb') as f:
+    # with open('./outputs/result/batch_feats_res101.pickle', 'rb') as f:
     #     batch_feats = pickle.load(f)
 
     # Run
@@ -215,9 +215,9 @@ def run_mtmc():
         # detections[fdx] = detection
         # batch_feats[fdx] = batch_feat
 
-    # with open('./outputs/yolov7-e6e/detections.pickle', 'wb') as f:
+    # with open('./outputs/result/detections.pickle', 'wb') as f:
     #     pickle.dump(detections, f, protocol=pickle.HIGHEST_PROTOCOL)
-    # with open('./outputs/yolov7-e6e/batch_feats_res101.pickle', 'wb') as f:
+    # with open('./outputs/result/batch_feats_res101.pickle', 'wb') as f:
     #     pickle.dump(batch_feats, f, protocol=pickle.HIGHEST_PROTOCOL)
 
         # detection = detections[fdx]
@@ -500,5 +500,5 @@ def prepare_align(cams, f_nums):
 if __name__ == '__main__':
     with torch.no_grad():
         run_mtmc()
-    calculate_results('outputs/ground_truth_validation.txt','outputs/yolov7-e6e/mtmc_resnet50_ibn_a_gap.txt')
+    calculate_results('outputs/ground_truth_validation.txt', 'outputs/result/v1.txt')
 

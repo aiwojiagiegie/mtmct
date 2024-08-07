@@ -8,7 +8,6 @@ from tqdm import tqdm
 sys.path.append('../')
 from utils.IouUtils import calculate_iou
 
-
 def hsv2bgr(h, s, v):
     h_i = int(h * 6)
     f = h * 6 - h_i
@@ -297,10 +296,10 @@ def generate_remove_duplicate():
         draw_bboxes_remove_duplicate(f'../../dataset/AIC19/validation/S02/c00{camera_id}/vdo.avi',
                                      frame_bboxes['gt'],
                                      frame_bboxes['pred'],
-                                     f'debug/only_gt/c00{camera_id}.mp4', gt_bbox_colors, pred_bbox_colors)
+                                     f'debug/remove_duplicate/c00{camera_id}.mp4', gt_bbox_colors, pred_bbox_colors)
 
 
 if __name__ == '__main__':
+    detection_path = f'result/{MTMCT.mtmct_version}.txt'
     gt_path = 'ground_truth_validation.txt'
-    detection_path = 'yolov7-e6e/mtmc_resnet50_ibn_a_gap.txt'
     generate_remove_duplicate()

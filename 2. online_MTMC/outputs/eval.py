@@ -144,6 +144,7 @@ def print_results(summary, mread=False):
     if mread:
         print('{"results":%s}' % summary.iloc[-1].to_json())
         return
+    print(summary)
 
     formatters = {'idf1': '{:2.2f}'.format,
                   'idp': '{:2.2f}'.format,
@@ -436,12 +437,40 @@ def usage(msg=None):
     exit()
 
 
+info = {
+    "idf1": "评估跟踪器和基准真实数据之间的一致性",
+    "idp": "正确识别的目标比例。",
+    "idr": "从所有真实目标中，被正确识别的比例。",
+    "recall": "从所有真实目标中，被正确识别的比例。",
+    "precision": "正确识别的目标比例。",
+    "num_unique_objects": "总共需要被跟踪的不同目标的数量。",
+    "mostly_tracked": "被跟踪时间超过 80% 的目标数。",
+    "partially_tracked": "被跟踪时间在 20% 到 80% 之间的目标数。",
+    "mostly_lost": "被跟踪时间少于 20% 的目标数。",
+    "num_false_positives": "错误识别的目标数。",
+    "num_misses": "未被跟踪到的真实目标数。",
+    "num_switches": "目标身份在跟踪过程中错误切换的次数。",
+    "num_fragmentations": "目标跟踪过程中断然后重新开始的次数。",
+    "mota": "表示整体跟踪准确率。",
+    "motp": "表示跟踪的位置精度。",
+    "num_frames": "数据中的帧数。",
+    "idfp": "错误跟踪的目标数。",
+    "idfn": "被错误丢失的目标数。",
+    "idtp": "被正确跟踪的目标数。",
+    "num_transfer": "目标在不同摄像机视角间转移的次数。",
+    "num_ascend": "目标在场景中升级或升高的次数。",
+    "num_migrate": "目标从一个区域迁移到另一个区域的次数。"
+}
+baseline = {'idf1': 0.7825229312555478, 'idp': 0.8095918367346939, 'idr': 0.7572055735827448, 'recall': 0.8324107654132468, 'precision': 0.89, 'num_unique_objects': 145, 'mostly_tracked': 105, 'partially_tracked': 35, 'mostly_lost': 5, 'num_false_positives': 2156, 'num_misses': 3512, 'num_switches': 43, 'num_fragmentations': 240, 'mota': 0.7274766176751288, 'motp': 0.2514508515359548, 'num_transfer': 46, 'num_ascend': 10, 'num_migrate': 18, 'num_frames': 7494, 'idfp': 3732.0, 'idfn': 5088.0, 'idtp': 15868.0}
+
 def calculate_results(test_path, pred_path, mread=False, dstype='validation', roidir='/data2/zhangkun/project/Fast_Online_MTMCT/dataset/AIC19/validation/S02'):
     test = readData(test_path)
     pred = readData(pred_path)
     try:
         summary = eval(test, pred, mread=mread, dstype=dstype, roidir=roidir)
-        print_results(summary, mread=mread)
+        # 将DataFrame转换为字典列表
+        my_print_result(summary)
+        # print_results(summary, mread=mread)
     except Exception as e:
         if mread:
             print('{"error": "%s"}' % repr(e))
@@ -450,9 +479,29 @@ def calculate_results(test_path, pred_path, mread=False, dstype='validation', ro
         traceback.print_exc()
 
 
+def my_print_result(summary):
+    dict_list = summary.to_dict(orient='records')
+    format_str = "{:<20} {:<15} {:<12} {:10} {:4} {}"
+    float_format = "{:<20} {:<15.6%} {:<12.6%} {:10.6%} {:4} {}"
+    print(format_str.format("指标", "baseline", "当前结果", "差值", "好坏", "指标解释"))
+    for record in dict_list:
+        for key, value in record.items():
+            # 计算差值和符号
+            difference = value - baseline[key]
+            symbol = "↑" if difference > 0 else "↓" if difference < 0 else ""
+            if isinstance(value, float) :
+                if value.is_integer():
+                    print(format_str.format(key, int(baseline[key]), int(value),difference,symbol, info[key]))
+                else:
+                    print(float_format.format(key, baseline[key], value,difference,symbol,  info[key]))
+            else:
+                print(format_str.format(key, baseline[key], value, difference,symbol, info[key]))
+
+
 if __name__ == '__main__':
-    # calculate_results('ground_truth_validation.txt','yolov7-e6e/mtmc_resnet50_ibn_a_gap.txt')
-    calculate_results('test_gt.txt','test_pred.txt')
+    calculate_results('ground_truth_validation.txt', 'result/v1.txt')
+    # calculate_results('ground_truth_validation.txt', 'result/baseline.txt')
+    # calculate_results('test_gt.txt','test_pred.txt')
     # args = get_args();
     # if not args.data or len(args.data) < 2:
     #     usage("Incorrect number of arguments. Must provide paths for the test (ground truth) and predicitons.")

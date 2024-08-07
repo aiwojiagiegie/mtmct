@@ -70,6 +70,9 @@ class BoTSORT(object):
         self.max_time_lost = int(opt.max_time_lost)
 
     def update(self, cam, detections, features):
+        """
+        更新SCT的跟踪数据
+        """
         # Initialize
         activated = []
         re_activated = []
@@ -177,6 +180,7 @@ class BoTSORT(object):
 
             if track.state == TrackState.Tracked:
                 track.update(det, self.frame_id)
+                track.obs_history[-1][2] = self.opt.det_high_thresh+0.01
                 activated.append(track)
             else:
                 track.re_activate(det, self.frame_id, new_id=False)

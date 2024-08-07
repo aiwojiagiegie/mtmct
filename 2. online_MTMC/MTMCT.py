@@ -1,4 +1,6 @@
 import os
+import pickle
+
 import cv2
 import time
 import copy
@@ -183,6 +185,61 @@ class MTMCT(object):
         self.next_global_id, self.dunn_index_prev = 0, -1e5
         self.clusters_dict = {}
         self.result = []
+    def run_mtmct(self):
+        # Run
+        for fdx in tqdm(range(0, np.max(self.f_nums) + 1)):
+            # 准备图像数据
+            batch_img, batch_img_ori, valid_cam = self.generate_image_info(fdx)
+
+            # 目标检测
+            preds = self.detect(batch_img, valid_cam)
+
+            # REID
+            batch_feat, detection = self.reid(batch_img, batch_img_ori, preds)
+
+            # 单摄像头跟踪
+            online_tracks_raw = self.MTSCT_online(batch_feat, detection)
+
+            # 跨摄像头跟踪
+            self.mtmct_online(fdx, online_tracks_raw)
+        self.result_path = self.output_dir + f'{mtmct_version}.txt'
+        with open(self.result_path, 'w') as result_txt:
+            for r in self.result:
+                print(r, file=result_txt)
+        print(f'结果已经写入到{self.result_path}')
+        # Logging
+        track_t, total_t = 0, 0
+        print('%s_%s_%s' % (opt.det_name, opt.feat_ext_name, opt.avg_type))
+        for key in self.total_times.keys():
+            print('%s: %05f' % (key, self.total_times[key] / (np.max(self.f_nums) + 1)))
+            track_t += self.total_times[key] / (np.max(self.f_nums) + 1) if key == 'MTSC' or key == 'MTMC' else 0
+            total_t += self.total_times[key] / (np.max(self.f_nums) + 1)
+        print('Tracking Time: %05f' % track_t)
+        print('Total Time: %05f' % total_t)
+
+    def generate_image_info(self, fdx):
+        """
+        准备图像数据
+        """
+        # Generate empty batches
+        batch_img = torch.zeros((len(self.cams), 3, self.img_size[0], self.img_size[1]), device='cuda').half()
+        batch_img_ori = torch.zeros((len(self.cams), 3, opt.img_ori_size[0], opt.img_ori_size[1]),
+                                    device='cuda').half()
+        # 准备图像数据
+        valid_cam = {}
+        for cdx, cam in enumerate(self.cams):
+            # Read
+            valid_cam[cam] = True
+            path, img, img_ori, _ = self.datasets[cam].__next__(cam, self.temp_align[cam][fdx])
+            # Check 这里检查是否有这样的图片存在文件夹中，如果没有则跳过然后到下一个摄像头中
+            if img is None:
+                valid_cam[cam] = False
+                continue
+
+            # Store 把读取到的图片存到batch_img中并且序列化
+            batch_img[cdx] = torch.tensor(img / 255.0, device='cuda').half()
+            batch_img_ori[cdx] = torch.tensor(img_ori.transpose((2, 0, 1)) / 255.0, device='cuda').half()
+        return batch_img, batch_img_ori, valid_cam
 
     def mtmct_online(self, fdx, online_tracks_raw):
         start = time.time()
@@ -427,58 +484,54 @@ class MTMCT(object):
         self.total_times['Det'] += time.time() - self.start
         return preds
 
-    def run_mtmct(self):
-        # Run
-        for fdx in tqdm(range(0, np.max(self.f_nums) + 1)):
-            # Generate empty batches
-            batch_img = torch.zeros((len(self.cams), 3, self.img_size[0], self.img_size[1]), device='cuda').half()
-            batch_img_ori = torch.zeros((len(self.cams), 3, opt.img_ori_size[0], opt.img_ori_size[1]),
-                                        device='cuda').half()
 
-            # 准备图像数据
-            valid_cam = {}
-            for cdx, cam in enumerate(self.cams):
-                # Read
-                valid_cam[cam] = True
-                path, img, img_ori, _ = self.datasets[cam].__next__(cam, self.temp_align[cam][fdx])
-
-                # Check 这里检查是否有这样的图片存在文件夹中，如果没有则跳过然后到下一个摄像头中
-                if img is None:
-                    valid_cam[cam] = False
+    def caculate_result(self):
+        ans=[]
+        for cam_name in self.trackers:
+            for tracker in self.trackers[cam_name].finished:
+                # tracker = boTSORT[cam_name]
+                if tracker.global_id is None:
                     continue
+                for item in tracker.obs_history:
+                    left, top, w, h = item[1]
 
-                # Store 把读取到的图片存到batch_img中并且序列化
-                batch_img[cdx] = torch.tensor(img / 255.0, device='cuda').half()
-                batch_img_ori[cdx] = torch.tensor(img_ori.transpose((2, 0, 1)) / 255.0, device='cuda').half()
-            # 目标检测
-            preds = self.detect(batch_img, valid_cam)
+                    # Expand box, Since gt boxes are not tightly annotated around objects and quite larger than objects
+                    cx, cy = left + w / 2, top + h / 2
+                    w, h = w * 1.45, h * 1.45
+                    left, top = cx - w / 2, cy - h / 2
 
-            # REID
-            batch_feat, detection = self.reid(batch_img, batch_img_ori, preds)
+                    # Filter with size, Since gt does not include small boxes
+                    if w * h / self.img_w / self.img_h < 0.003 or 0.3 < w * h / self.img_w / self.img_h:
+                        continue
+                    format_string = f"{int(tracker.cam[-1])} {tracker.global_id} {self.temp_align[tracker.cam][tracker.frame_id]} " \
+                                        f"{int(left)} {int(top)} {int(w)} {int(h)} -1 -1"
+                    ans.append(
+                        '%d %d %d %d %d %d %d -1 -1' % (
+                        int(tracker.cam[-1]), tracker.global_id, item[0],
+                        int(left), int(top), int(w), int(h)))
+        return ans
 
-            # 单摄像头跟踪
-            online_tracks_raw = self.MTSCT_online(batch_feat, detection)
-
-            # 跨摄像头跟踪
-            self.mtmct_online(fdx, online_tracks_raw)
-        self.result_path = self.output_dir + 'mtmc_%s_%s.txt' % (opt.feat_ext_name, opt.avg_type)
-        with open(self.result_path, 'w') as result_txt:
-            for r in self.result:
-                print(r, file=result_txt)
-        print(f'结果已经写入到{self.result_path}')
-        # Logging
-        track_t, total_t = 0, 0
-        print('%s_%s_%s' % (opt.det_name, opt.feat_ext_name, opt.avg_type))
-        for key in self.total_times.keys():
-            print('%s: %05f' % (key, self.total_times[key] / (np.max(self.f_nums) + 1)))
-            track_t += self.total_times[key] / (np.max(self.f_nums) + 1) if key == 'MTSC' or key == 'MTMC' else 0
-            total_t += self.total_times[key] / (np.max(self.f_nums) + 1)
-        print('Tracking Time: %05f' % track_t)
-        print('Total Time: %05f' % total_t)
-
-
-if __name__ == '__main__':
+def run():
     mtmct = MTMCT(opt)
     with torch.no_grad():
         mtmct.run_mtmct()
+    with open(outputs_mtmct_pkl, 'wb') as f:
+        pickle.dump(mtmct, f)
+    return mtmct
+def debug(outputs_mtmct_pkl):
+    with open(outputs_mtmct_pkl, 'rb') as file:
+        mtmct = pickle.load(file)
+    return mtmct
+
+mtmct_version = 'v1.0'
+
+if __name__ == '__main__':
+    outputs_mtmct_pkl = 'outputs/mtmct.pkl'
+    mtmct = run()
+    # mtmct = debug(outputs_mtmct_pkl)
+    # ans = mtmct.caculate_result()
+    # debug_result='outputs/debug_result.txt'
+    # with open(debug_result, 'w') as result_txt:
+    #     for r in ans:
+    #         print(r, file=result_txt)
     calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
