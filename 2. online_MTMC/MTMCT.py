@@ -151,7 +151,7 @@ class MTMCT(object):
 
         # Prepare ========================================================================================================
         # Prepare output folder
-        self.output_dir = opt.output_dir + '%s/' % opt.det_name
+        self.output_dir = opt.output_dir + '%s/' % result_dir
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
 
@@ -406,6 +406,9 @@ class MTMCT(object):
         return online_tracks_filtered
 
     def MTSCT_online(self, batch_feat, detection):
+        """
+        返回出四个跟踪器在更新新的帧之后，仍在跟踪的轨迹集合
+        """
         start = time.time()
         feat_count, feat = 0, {}
         for cam in self.cams:
@@ -497,7 +500,7 @@ class MTMCT(object):
 
                     # Expand box, Since gt boxes are not tightly annotated around objects and quite larger than objects
                     cx, cy = left + w / 2, top + h / 2
-                    w, h = w * 1.45, h * 1.45
+                    w, h = w * 1.5, h * 1.5
                     left, top = cx - w / 2, cy - h / 2
 
                     # Filter with size, Since gt does not include small boxes
@@ -523,8 +526,8 @@ def debug(outputs_mtmct_pkl):
         mtmct = pickle.load(file)
     return mtmct
 
-mtmct_version = 'v1.0'
-
+mtmct_version = 'v1'
+result_dir = 'results'
 if __name__ == '__main__':
     outputs_mtmct_pkl = 'outputs/mtmct.pkl'
     mtmct = run()

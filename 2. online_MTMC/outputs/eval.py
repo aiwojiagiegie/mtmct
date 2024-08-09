@@ -157,7 +157,229 @@ def print_results(summary, mread=False):
     print(mm.io.render_summary(summary, formatters=formatters, namemap=mm.io.motchallenge_metric_names))
     return
 
+def compare_dataframes_mtmc(gts, ts,mh):
+    """Compute ID-based evaluation metrics for multi-camera multi-object tracking.
 
+    Params
+    ------
+    gts : pandas.DataFrame
+        Ground truth data.
+    ts : pandas.DataFrame
+        Prediction/test data.
+    Returns
+    -------
+    df : pandas.DataFrame
+        Results of the evaluations in a df with only the 'idf1', 'idp', and 'idr' columns.
+    """
+    gtds = []
+    tsds = []
+    gtcams = gts['CameraId'].drop_duplicates().tolist()
+    tscams = ts['CameraId'].drop_duplicates().tolist()
+    maxFrameId = 0;
+
+    for k in tqdm(sorted(gtcams)):
+        gtd = gts.query('CameraId == %d' % k)
+        gtd = gtd[['FrameId', 'Id', 'X', 'Y', 'Width', 'Height']]
+        # max FrameId in gtd only
+        mfid = gtd['FrameId'].max()
+        gtd['FrameId'] += maxFrameId
+        gtd = gtd.set_index(['FrameId', 'Id'])
+        gtds.append(gtd)
+
+        if k in tscams:
+            tsd = ts.query('CameraId == %d' % k)
+            tsd = tsd[['FrameId', 'Id', 'X', 'Y', 'Width', 'Height']]
+            # max FrameId among both gtd and tsd
+            mfid = max(mfid, tsd['FrameId'].max())
+            tsd['FrameId'] += maxFrameId
+            tsd = tsd.set_index(['FrameId', 'Id'])
+            tsds.append(tsd)
+
+        maxFrameId += mfid
+
+    # compute multi-camera tracking evaluation stats
+    gtds_concat = pd.concat(gtds)
+    tsds_concat = pd.concat(tsds)
+    multiCamAcc = mm.utils.compare_to_groundtruth(gtds_concat, tsds_concat, 'iou')
+    metrics = list(mm.metrics.motchallenge_metrics)
+    metrics.extend(['num_frames', 'idfp', 'idfn', 'idtp'])
+    summary = mh.compute(multiCamAcc, metrics=metrics, name='MultiCam')
+
+    return summary
+def removeRepetition(df):
+    """Remove repetition to ensure that all objects are unique for every frame.
+
+    Params
+    ------
+    df : pandas.DataFrame
+        Data that should be filtered
+    Returns
+    -------
+    df : pandas.DataFrame
+        Filtered data that all objects are unique for every frame.
+    """
+
+    df = df.drop_duplicates(subset=['CameraId', 'Id', 'FrameId'], keep='first')
+
+    return df
+def removeOutliersSingleCam(df):
+    """Remove outlier objects that appear in a single camera.
+
+    Params
+    ------
+    df : pandas.DataFrame
+        Data that should be filtered
+    Returns
+    -------
+    df : pandas.DataFrame
+        Filtered data with only objects that appear in 2 or more cameras.
+    """
+    # get unique CameraId/Id combinations, then count by Id
+    cnt = df[['CameraId', 'Id']]
+    cnt = cnt.drop_duplicates()[['Id']].groupby(['Id'])
+    cnt = cnt.size()  # 这里获取到了哪些车辆id出现在摄像头的次数
+    # keep only those Ids with a camera count > 1
+    keep = cnt[cnt > 1]
+    no_keep = cnt[cnt <= 1]
+    # retrict the data to kept ids
+    return df.loc[df['Id'].isin(keep.index)]
+def removeOutliersROI(df, dstype='train', roidir='ROIs', cid=None):
+    """ Remove outliers from the submitted test df that are outsize the region of interest for each camera.
+
+    Params
+    ------
+    df : pandas.dfFrame
+        df that should be filtered.
+    dstype : str
+        Data set type. One of 'train', 'validation' or 'test'. Defaults to 'train'.
+    roidir : str
+        Directory containing the ROI images. Images are stores in sub-directories <dstype>/c<camid%03d>/roi.jpg,
+        where dstype is the dataset type, and camid is the camera number as a 3-digit 0-padded int.
+        If the ROI data cannot be found, it will be downloaded and stored locally in the <roidir> directory
+        relative to the execution of the eval script. Defaults to 'ROIs'.
+    cid : int
+        Optional camera ID for which to filter data. Defaults to None.
+    Returns
+    -------
+    df : pandas.dfFrame
+        Filtered df with only objects within the ROI retained.
+    """
+
+    def loadroi(cid):
+        """Read the ROI image for a given camera.
+
+        Params
+        ------
+        cid : int
+            Camera ID whose ROI image should be retrieved.
+        Returns
+        -------
+        im : numpy.ndarray
+            Image stored as a 2-d ndarray.
+        """
+
+        imf = os.path.join(roidir, 'c%03d' % cid, 'roi.jpg')
+        if not os.path.exists(imf):
+            raise ValueError("Missing ROI image for camera %03d." % cid)
+        img = Image.open(imf, mode='r')
+        img.load()
+        if img.size[0] > img.size[1]:
+            img = img.transpose(Image.TRANSPOSE)
+
+        im = np.asarray(img, dtype="uint8")
+        if im.shape[0] > im.shape[1]:
+            im = im.T
+
+        return im
+
+    def isROIOutlier(row, roi, height, width):
+        """Check whether item stored in row is outside the region of interest.
+
+        Params
+        ------
+        row : pandas.Series
+            Row of data including, at minimum, the 'X', 'Y', 'Width', and 'Height' columns.
+        roi : numpy.ndarray
+            ROI image for the camera with the same id as in row['CameraId'].
+        height : int
+            ROI image height.
+        width : int
+            ROI image width.
+        Returns
+        -------
+        bool
+            Return True if image is an outlier.
+        """
+        xmin = int(row['X'])
+        ymin = int(row['Y'])
+        xmax = int(row['X'] + row['Width'])
+        ymax = int(row['Y'] + row['Height'])
+
+        if xmin >= 0 and xmin < width:
+            if ymin >= 0 and ymin < height and roi[ymin, xmin] < 255:
+                return True
+            if ymax >= 0 and ymax < height and roi[ymax, xmin] < 255:
+                return True
+        if xmax >= 0 and xmax < width:
+            if ymin >= 0 and ymin < height and roi[ymin, xmax] < 255:
+                return True
+            if ymax >= 0 and ymax < height and roi[ymax, xmax] < 255:
+                return True
+        return False
+
+    # Fetch the ROI data if necessary
+    if not os.path.isdir(roidir):
+        import zipfile
+        import urllib.request
+        import shutil
+        import tempfile
+        os.makedirs(roidir)
+        url = 'https://drive.google.com/uc?export=download&id=1sHQqtzNaUJu1r3AJ8X0sODfe9TIu4C1M'
+        # Download the file from `url` and save it locally under `file_name`:
+        tmp_fname = next(tempfile._get_candidate_names())
+        tmp_dir = tempfile._get_default_tempdir()
+        fzip = os.path.join(tmp_dir, tmp_fname)
+        with urllib.request.urlopen(url) as response, open(fzip, 'wb') as ofh:
+            shutil.copyfileobj(response, ofh)
+        zip_ref = zipfile.ZipFile(fzip, 'r')
+        zip_ref.extractall(roidir)
+        zip_ref.close()
+        os.remove(fzip)
+
+    # Store which rows are not ROI outliers
+    df['NotOutlier'] = True
+
+    if cid is None:  # Process all cameras
+        # Make sure df is sorted appropriately
+        df.sort_values(['CameraId', 'FrameId'], inplace=True)
+        # Load first ROI image
+        tscams = df['CameraId'].unique()
+        cid = tscams[0]
+        roi = loadroi(cid)
+        height, width = roi.shape
+        # Loop over objects and check for outliers
+        for i, row in df.iterrows():
+            if row['CameraId'] != cid:
+                cid = row['CameraId']
+                roi = loadroi(cid)
+                height, width = roi.shape
+            if isROIOutlier(row, roi, height, width):
+                df.at[i, 'NotOutlier'] = False
+
+        return df[df['NotOutlier']].drop(columns=['NotOutlier'])
+
+    df = df[df['CameraId'] == cid].copy()
+    # Make sure df is sorted appropriately
+    df.sort_values(['CameraId', 'FrameId'], inplace=True)
+    # Load ROI image
+    roi = loadroi(cid)
+    height, width = roi.shape
+    # Loop over objects and check for outliers
+    for i, row in df.iterrows():
+        if isROIOutlier(row, roi, height, width):
+            df.at[i, 'NotOutlier'] = False
+
+    return df[df['NotOutlier']].drop(columns=['NotOutlier'])
 def eval(test, pred, **kwargs):
     """ Evaluate submission.
 
@@ -187,234 +409,6 @@ def eval(test, pred, **kwargs):
     dstype = kwargs.pop('dstype', 'train')
     roidir = kwargs.pop('roidir', 'ROIs')
 
-    # Internal evaluation functions
-    def removeOutliersROI(df, dstype='train', roidir='ROIs', cid=None):
-        """ Remove outliers from the submitted test df that are outsize the region of interest for each camera.
-        
-        Params
-        ------
-        df : pandas.dfFrame
-            df that should be filtered.
-        dstype : str
-            Data set type. One of 'train', 'validation' or 'test'. Defaults to 'train'.
-        roidir : str
-            Directory containing the ROI images. Images are stores in sub-directories <dstype>/c<camid%03d>/roi.jpg,
-            where dstype is the dataset type, and camid is the camera number as a 3-digit 0-padded int.
-            If the ROI data cannot be found, it will be downloaded and stored locally in the <roidir> directory
-            relative to the execution of the eval script. Defaults to 'ROIs'.
-        cid : int
-            Optional camera ID for which to filter data. Defaults to None.
-        Returns
-        -------
-        df : pandas.dfFrame
-            Filtered df with only objects within the ROI retained.
-        """
-
-        def loadroi(cid):
-            """Read the ROI image for a given camera.
-        
-            Params
-            ------
-            cid : int
-                Camera ID whose ROI image should be retrieved.
-            Returns
-            -------
-            im : numpy.ndarray
-                Image stored as a 2-d ndarray.
-            """
-
-            imf = os.path.join(roidir, 'c%03d' % cid, 'roi.jpg')
-            if not os.path.exists(imf):
-                raise ValueError("Missing ROI image for camera %03d." % cid)
-            img = Image.open(imf, mode='r')
-            img.load()
-            if img.size[0] > img.size[1]:
-                img = img.transpose(Image.TRANSPOSE)
-
-            im = np.asarray(img, dtype="uint8")
-            if im.shape[0] > im.shape[1]:
-                im = im.T
-
-            return im
-
-        def isROIOutlier(row, roi, height, width):
-            """Check whether item stored in row is outside the region of interest.
-            
-            Params
-            ------
-            row : pandas.Series
-                Row of data including, at minimum, the 'X', 'Y', 'Width', and 'Height' columns.
-            roi : numpy.ndarray
-                ROI image for the camera with the same id as in row['CameraId'].
-            height : int
-                ROI image height.
-            width : int
-                ROI image width.
-            Returns
-            -------
-            bool
-                Return True if image is an outlier.
-            """
-            xmin = int(row['X'])
-            ymin = int(row['Y'])
-            xmax = int(row['X'] + row['Width'])
-            ymax = int(row['Y'] + row['Height'])
-
-            if xmin >= 0 and xmin < width:
-                if ymin >= 0 and ymin < height and roi[ymin, xmin] < 255:
-                    return True
-                if ymax >= 0 and ymax < height and roi[ymax, xmin] < 255:
-                    return True
-            if xmax >= 0 and xmax < width:
-                if ymin >= 0 and ymin < height and roi[ymin, xmax] < 255:
-                    return True
-                if ymax >= 0 and ymax < height and roi[ymax, xmax] < 255:
-                    return True
-            return False
-
-        # Fetch the ROI data if necessary
-        if not os.path.isdir(roidir):
-            import zipfile
-            import urllib.request
-            import shutil
-            import tempfile
-            os.makedirs(roidir)
-            url = 'https://drive.google.com/uc?export=download&id=1sHQqtzNaUJu1r3AJ8X0sODfe9TIu4C1M'
-            # Download the file from `url` and save it locally under `file_name`:
-            tmp_fname = next(tempfile._get_candidate_names())
-            tmp_dir = tempfile._get_default_tempdir()
-            fzip = os.path.join(tmp_dir, tmp_fname)
-            with urllib.request.urlopen(url) as response, open(fzip, 'wb') as ofh:
-                shutil.copyfileobj(response, ofh)
-            zip_ref = zipfile.ZipFile(fzip, 'r')
-            zip_ref.extractall(roidir)
-            zip_ref.close()
-            os.remove(fzip)
-
-        # Store which rows are not ROI outliers
-        df['NotOutlier'] = True
-
-        if cid is None:  # Process all cameras
-            # Make sure df is sorted appropriately
-            df.sort_values(['CameraId', 'FrameId'], inplace=True)
-            # Load first ROI image
-            tscams = df['CameraId'].unique()
-            cid = tscams[0]
-            roi = loadroi(cid)
-            height, width = roi.shape
-            # Loop over objects and check for outliers
-            for i, row in df.iterrows():
-                if row['CameraId'] != cid:
-                    cid = row['CameraId']
-                    roi = loadroi(cid)
-                    height, width = roi.shape
-                if isROIOutlier(row, roi, height, width):
-                    df.at[i, 'NotOutlier'] = False
-
-            return df[df['NotOutlier']].drop(columns=['NotOutlier'])
-
-        df = df[df['CameraId'] == cid].copy()
-        # Make sure df is sorted appropriately
-        df.sort_values(['CameraId', 'FrameId'], inplace=True)
-        # Load ROI image
-        roi = loadroi(cid)
-        height, width = roi.shape
-        # Loop over objects and check for outliers
-        for i, row in df.iterrows():
-            if isROIOutlier(row, roi, height, width):
-                df.at[i, 'NotOutlier'] = False
-
-        return df[df['NotOutlier']].drop(columns=['NotOutlier'])
-
-    def removeOutliersSingleCam(df):
-        """Remove outlier objects that appear in a single camera.
-        
-        Params
-        ------
-        df : pandas.DataFrame
-            Data that should be filtered
-        Returns
-        -------
-        df : pandas.DataFrame
-            Filtered data with only objects that appear in 2 or more cameras.
-        """
-        # get unique CameraId/Id combinations, then count by Id
-        cnt = df[['CameraId', 'Id']]
-        cnt = cnt.drop_duplicates()[['Id']].groupby(['Id'])
-        cnt = cnt.size() # 这里获取到了哪些车辆id出现在摄像头的次数
-        # keep only those Ids with a camera count > 1
-        keep = cnt[cnt > 1]
-        no_keep=cnt[cnt <= 1]
-        # retrict the data to kept ids
-        return df.loc[df['Id'].isin(keep.index)]
-
-    def removeRepetition(df):
-        """Remove repetition to ensure that all objects are unique for every frame.
-
-        Params
-        ------
-        df : pandas.DataFrame
-            Data that should be filtered
-        Returns
-        -------
-        df : pandas.DataFrame
-            Filtered data that all objects are unique for every frame.
-        """
-
-        df = df.drop_duplicates(subset=['CameraId', 'Id', 'FrameId'], keep='first')
-
-        return df
-
-    def compare_dataframes_mtmc(gts, ts):
-        """Compute ID-based evaluation metrics for multi-camera multi-object tracking.
-        
-        Params
-        ------
-        gts : pandas.DataFrame
-            Ground truth data.
-        ts : pandas.DataFrame
-            Prediction/test data.
-        Returns
-        -------
-        df : pandas.DataFrame
-            Results of the evaluations in a df with only the 'idf1', 'idp', and 'idr' columns.
-        """
-        gtds = []
-        tsds = []
-        gtcams = gts['CameraId'].drop_duplicates().tolist()
-        tscams = ts['CameraId'].drop_duplicates().tolist()
-        maxFrameId = 0;
-
-        for k in tqdm(sorted(gtcams)):
-            gtd = gts.query('CameraId == %d' % k)
-            gtd = gtd[['FrameId', 'Id', 'X', 'Y', 'Width', 'Height']]
-            # max FrameId in gtd only
-            mfid = gtd['FrameId'].max()
-            gtd['FrameId'] += maxFrameId
-            gtd = gtd.set_index(['FrameId', 'Id'])
-            gtds.append(gtd)
-
-            if k in tscams:
-                tsd = ts.query('CameraId == %d' % k)
-                tsd = tsd[['FrameId', 'Id', 'X', 'Y', 'Width', 'Height']]
-                # max FrameId among both gtd and tsd
-                mfid = max(mfid, tsd['FrameId'].max())
-                tsd['FrameId'] += maxFrameId
-                tsd = tsd.set_index(['FrameId', 'Id'])
-                tsds.append(tsd)
-
-            maxFrameId += mfid
-
-        # compute multi-camera tracking evaluation stats
-        gtds_concat = pd.concat(gtds)
-        tsds_concat = pd.concat(tsds)
-        multiCamAcc = mm.utils.compare_to_groundtruth(gtds_concat, tsds_concat, 'iou')
-        metrics = list(mm.metrics.motchallenge_metrics)
-        metrics.extend(['num_frames', 'idfp', 'idfn', 'idtp'])
-        summary = mh.compute(multiCamAcc, metrics=metrics, name='MultiCam')
-
-        return summary
-
     mh = mm.metrics.create()
 
     # filter prediction data
@@ -426,7 +420,7 @@ def eval(test, pred, **kwargs):
     pred = removeRepetition(pred)
 
     # evaluate results
-    return compare_dataframes_mtmc(test, pred)
+    return compare_dataframes_mtmc(test, pred,mh)
 
 
 def usage(msg=None):
@@ -441,7 +435,7 @@ info = {
     "idf1": "评估跟踪器和基准真实数据之间的一致性",
     "idp": "正确识别的目标比例。",
     "idr": "从所有真实目标中，被正确识别的比例。",
-    "recall": "从所有真实目标中，被正确识别的比例。",
+    "recall": "召回率",
     "precision": "正确识别的目标比例。",
     "num_unique_objects": "总共需要被跟踪的不同目标的数量。",
     "mostly_tracked": "被跟踪时间超过 80% 的目标数。",
@@ -496,10 +490,8 @@ def my_print_result(summary):
                     print(float_format.format(key, baseline[key], value,difference,symbol,  info[key]))
             else:
                 print(format_str.format(key, baseline[key], value, difference,symbol, info[key]))
-
-
 if __name__ == '__main__':
-    calculate_results('ground_truth_validation.txt', 'result/v1.txt')
+    calculate_results('ground_truth_validation.txt', f'ground_truth_validation.txt')
     # calculate_results('ground_truth_validation.txt', 'result/baseline.txt')
     # calculate_results('test_gt.txt','test_pred.txt')
     # args = get_args();
