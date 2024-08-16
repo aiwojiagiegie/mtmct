@@ -6,3 +6,6 @@ dataset/AIC19_VeRi
 .idea
 *.mp4
 *.zip
+*.pkl
+*.png
+*.jpg
