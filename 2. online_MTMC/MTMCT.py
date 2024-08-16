@@ -20,6 +20,7 @@ from models.feature_extractor import FeatureExtractor
 from utils.scipy_linear_assignment import linear_assignment
 from utils.general import check_img_size, non_max_suppression, scale_coords
 from utils.utils import letterbox, class_agnostic_nms, pairwise_tracks_dist
+from yolov10.ultralytics import YOLOv10
 
 
 class Cluster:
@@ -135,6 +136,7 @@ class MTMCT(object):
         # Load detection model
         self.det_model = attempt_load(opt.det_weights + opt.det_name + '.pt')
         self.det_model = self.det_model.cuda().eval().half()
+        self.YOLOv10_detect_model = YOLOv10(opt.det_weights + opt.det_name + '.pt')
 
         # For time measurement
         self.total_times = {'Det': 0, 'Ext': 0, 'MTSC': 0, 'MTMC': 0}
@@ -477,17 +479,29 @@ class MTMCT(object):
         self.start = time.time()
         # 目标检测阶段
         # Detect =====================================================================================================
-        with torch.autocast('cuda'):
-            preds = self.det_model(batch_img[list(valid_cam.values())], augment=opt.augment)[0]
-        # NMS之后是最终的检测结果
-        preds = non_max_suppression(preds, opt.conf_thres, opt.iou_thres,
-                                    classes=opt.classes, agnostic=opt.agnostic_nms)
-        # Insert empty results
-        for cam_index, cam in enumerate(self.cams):
-            if not valid_cam[cam]:
-                preds.insert(cam_index, torch.zeros((0, 6)).cuda().half())
+        # with torch.autocast('cuda'):
+        #     preds = self.det_model(batch_img[list(valid_cam.values())], augment=opt.augment)[0]
+        # # NMS之后是最终的检测结果
+        # preds = non_max_suppression(preds, opt.conf_thres, opt.iou_thres,
+        #                             classes=opt.classes, agnostic=opt.agnostic_nms)
+        # for cam_index, cam in enumerate(self.cams):
+        #     if not valid_cam[cam]:
+        #         preds.insert(cam_index, torch.zeros((0, 6)).cuda().half())
+        preds_result = self.YOLOv10_detect_model(batch_img)
+        ans = []
+        for result in preds_result:
+            boxes = result.boxes.data.tolist()
+            temp_add = []
+            for obj in boxes:
+                if int(obj[5]) != 3 and int(obj[5]) != 0:
+                    temp_add.append(obj)
+            if len(temp_add) == 0:
+                tensor_temp_add = torch.zeros((0, 6), dtype=torch.float16).cuda().half()
+            else:
+                tensor_temp_add = torch.tensor(temp_add, dtype=torch.float16).cuda().half()
+            ans.append(tensor_temp_add)
         self.total_times['Det'] += time.time() - self.start
-        return preds
+        return ans
 
     def caculate_result(self):
         ans = []

@@ -6,7 +6,7 @@ class Opts:
         self.parser = argparse.ArgumentParser()
 
         # Options for detection
-        self.parser.add_argument('--det_name', type=str, default='yolov7-e6e')
+        self.parser.add_argument('--det_name', type=str, default='best')
         self.parser.add_argument('--det_weights', type=str, default='./preliminary/det_weights/')
         self.parser.add_argument('--img_size', type=int, default=[720, 1280], help='inference size (pixels)')
         self.parser.add_argument('--classes', type=int, default=[2, 5, 7], help='filter by class')
