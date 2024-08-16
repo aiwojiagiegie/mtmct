@@ -300,6 +300,11 @@ def generate_remove_duplicate():
 
 
 if __name__ == '__main__':
-    detection_path = f'result/{MTMCT.mtmct_version}.txt'
-    gt_path = 'ground_truth_validation.txt'
-    generate_remove_duplicate()
+    # detection_path = f'result/{MTMCT.mtmct_version}.txt'
+    detection_path = f'result/finished.txt'
+    # gt_path = 'ground_truth_validation.txt'
+    # generate_remove_duplicate()
+    target_info, car_bbox_colors = get_bbox_data(detection_path)
+    for camera_id, frame_bboxes in target_info.items():
+        draw_bboxes(f'../../dataset/AIC19/validation/S02/c00{camera_id}/vdo.avi', frame_bboxes,
+                    f'debug/lost_track/c00{camera_id}.mp4', car_bbox_colors)

@@ -151,10 +151,10 @@ class MTMCT(object):
 
         # Prepare ========================================================================================================
         # Prepare output folder
-        self.output_dir = opt.output_dir + '%s/' % result_dir
+        self.output_dir = opt.output_dir
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
-
+        self.result_path = self.output_dir + f'{mtmct_version}.txt'
         # Prepare others
         self.datasets, self.trackers, self.f_nums = {}, {}, []
         self.roi_masks, self.overlap_regions_cam2cam = {}, {}
@@ -185,6 +185,7 @@ class MTMCT(object):
         self.next_global_id, self.dunn_index_prev = 0, -1e5
         self.clusters_dict = {}
         self.result = []
+
     def run_mtmct(self):
         # Run
         for fdx in tqdm(range(0, np.max(self.f_nums) + 1)):
@@ -202,7 +203,6 @@ class MTMCT(object):
 
             # 跨摄像头跟踪
             self.mtmct_online(fdx, online_tracks_raw)
-        self.result_path = self.output_dir + f'{mtmct_version}.txt'
         with open(self.result_path, 'w') as result_txt:
             for r in self.result:
                 print(r, file=result_txt)
@@ -253,7 +253,7 @@ class MTMCT(object):
         for track in online_tracks:
             if track.global_id is not None:
                 online_global_ids[track.cam].append(track.global_id)
-        # Get features and calculate pairwise distances
+        # 获取feat数据并计算特征距离
         online_feats = np.array([track.get_feature(mode=opt.get_feat_mode) for track in online_tracks])
         p_dists = pdist(online_feats, metric='cosine')
         p_dists = np.clip(p_dists, 0, 1)  # 归一化
@@ -363,6 +363,7 @@ class MTMCT(object):
                 # 根据摄像头与摄像头之间的overlap区域过滤
                 overlap_region = self.overlap_regions_cam2cam[online_tracks[i].cam][online_tracks[j].cam]
                 x1, y1, x2, y2 = online_tracks[i].x1y1x2y2.astype(np.int32)
+                y2 = y2 if y2 < 1080 else 1079
                 if overlap_region[y2, (x1 + x2) // 2] == 0:
                     p_dists[idx] = 10
                     continue
@@ -370,6 +371,7 @@ class MTMCT(object):
                 # If the objects are not in overlapping region (j -> i)
                 overlap_region = self.overlap_regions_cam2cam[online_tracks[j].cam][online_tracks[i].cam]
                 x1, y1, x2, y2 = online_tracks[j].x1y1x2y2.astype(np.int32)
+                y2 = y2 if y2 < 1080 else 1079
                 if overlap_region[y2, (x1 + x2) // 2] == 0:
                     p_dists[idx] = 10
                     continue
@@ -487,9 +489,8 @@ class MTMCT(object):
         self.total_times['Det'] += time.time() - self.start
         return preds
 
-
     def caculate_result(self):
-        ans=[]
+        ans = []
         for cam_name in self.trackers:
             for tracker in self.trackers[cam_name].finished:
                 # tracker = boTSORT[cam_name]
@@ -500,19 +501,48 @@ class MTMCT(object):
 
                     # Expand box, Since gt boxes are not tightly annotated around objects and quite larger than objects
                     cx, cy = left + w / 2, top + h / 2
-                    w, h = w * 1.5, h * 1.5
+                    w, h = w * 1.45, h * 1.45
                     left, top = cx - w / 2, cy - h / 2
 
                     # Filter with size, Since gt does not include small boxes
                     if w * h / self.img_w / self.img_h < 0.003 or 0.3 < w * h / self.img_w / self.img_h:
                         continue
                     format_string = f"{int(tracker.cam[-1])} {tracker.global_id} {self.temp_align[tracker.cam][tracker.frame_id]} " \
-                                        f"{int(left)} {int(top)} {int(w)} {int(h)} -1 -1"
+                                    f"{int(left)} {int(top)} {int(w)} {int(h)} -1 -1"
                     ans.append(
                         '%d %d %d %d %d %d %d -1 -1' % (
-                        int(tracker.cam[-1]), tracker.global_id, item[0],
-                        int(left), int(top), int(w), int(h)))
+                            int(tracker.cam[-1]), tracker.global_id, item[0],
+                            int(left), int(top), int(w), int(h)))
         return ans
+    def debug_finished(self):
+        with open(finished_txt, 'w') as output_file:
+            for online_track in self.trackers.values():
+                for track in online_track.finished:
+                    for info in track.obs_history:
+                        left, top, w, h = caculate_tlwh(info[1])
+
+                        # Expand box, Since gt boxes are not tightly annotated around objects and quite larger than objects
+                        cx, cy = left + w / 2, top + h / 2
+                        w, h = w * 1.45, h * 1.45
+                        left, top = cx - w / 2, cy - h / 2
+
+                        if left < 0 or top < 0:
+                            continue
+
+                        # Filter with size, Since gt does not include small boxes
+                        if w * h / self.img_w / self.img_h < 0.003 or 0.3 < w * h / self.img_w / self.img_h:
+                            continue
+                        if track.global_id is None:
+                            continue
+                        print(
+                            '%d %d %d %d %d %d %d -1 -1' % (int(track.cam[-1]), track.global_id , self.temp_align[track.cam][info[0]],
+                                                            int(left), int(top), int(w), int(h)),file=output_file)
+def caculate_tlwh(cxcywh):
+    x = cxcywh[0] - cxcywh[2] / 2
+    y = cxcywh[1] - cxcywh[3] / 2
+    w = cxcywh[2]
+    h = cxcywh[3]
+    return np.array([x, y, w, h])
 
 def run():
     mtmct = MTMCT(opt)
@@ -521,20 +551,28 @@ def run():
     with open(outputs_mtmct_pkl, 'wb') as f:
         pickle.dump(mtmct, f)
     return mtmct
-def debug(outputs_mtmct_pkl):
+
+
+def read_pkl_from_file(outputs_mtmct_pkl):
     with open(outputs_mtmct_pkl, 'rb') as file:
         mtmct = pickle.load(file)
     return mtmct
 
-mtmct_version = 'v1'
+
+finished_txt = 'outputs/result/finished.txt'
 result_dir = 'results'
-if __name__ == '__main__':
-    outputs_mtmct_pkl = 'outputs/mtmct.pkl'
+def debug():
+    mtmct = read_pkl_from_file(outputs_mtmct_pkl)
+    mtmct.debug_finished()
+    calculate_results('outputs/ground_truth_validation.txt', finished_txt)
+def main():
     mtmct = run()
-    # mtmct = debug(outputs_mtmct_pkl)
-    # ans = mtmct.caculate_result()
-    # debug_result='outputs/debug_result.txt'
-    # with open(debug_result, 'w') as result_txt:
-    #     for r in ans:
-    #         print(r, file=result_txt)
+    # mtmct = read_pkl_from_file(outputs_mtmct_pkl)
     calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
+    return mtmct
+if __name__ == '__main__':
+    opt.version = 3
+    mtmct_version = f'v{opt.version}'
+    outputs_mtmct_pkl = 'outputs/mtmct.pkl'
+    main()
+    # debug()

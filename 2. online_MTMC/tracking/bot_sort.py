@@ -5,6 +5,9 @@ from tracking.track import TrackState, BaseTrack, Track
 
 
 def joint_tracks(t_list_a, t_list_b):
+    """
+    合并两个track集合
+    """
     exists = {}
     res = []
 
@@ -73,7 +76,7 @@ class BoTSORT(object):
         """
         更新SCT的跟踪数据
         """
-        # Initialize
+        # 初始化
         activated = []
         re_activated = []
         lost = []
@@ -83,24 +86,24 @@ class BoTSORT(object):
         if len(detections.shape) == 1:
             detections = detections[np.newaxis, :]
 
-        # Initialize
+        # 初始化
         boxes = detections[:, 0:4].astype(np.float32)
         confidences = detections[:, 4].astype(np.float32)
         features = features.astype(np.float32)
 
-        # Remove bad detections
+        # 删除低于low_thresh的bbox和features
         indices_remain = confidences > self.opt.det_low_thresh
         boxes = boxes[indices_remain]
         confidences = confidences[indices_remain]
         features = features[indices_remain]
 
-        # Find high confidence detections
+        # 找到高于high_thresh的bbox和features
         indices_high = confidences > self.opt.det_high_thresh
         boxes_first = boxes[indices_high]
         confidences_first = confidences[indices_high]
         features_first = features[indices_high]
 
-        # Encode detections with Track
+        # 生成新的Track类
         if len(boxes_first) > 0:
             detections_first = [Track(cam, cxcywh, s, f)
                                 for (cxcywh, s, f) in zip(boxes_first, confidences_first, features_first)]
@@ -108,6 +111,7 @@ class BoTSORT(object):
             detections_first = []
 
         # Split into unactivated (tracked only 1 beginning frame) and tracked (tracked more than 2 frames)
+        # 将现有的track分成两部分tracked, unactivated
         tracked, unactivated = [], []
         for track in self.tracked:
             if not track.is_activated:
@@ -117,12 +121,15 @@ class BoTSORT(object):
 
         # Step 1 - First association, tracks & high confidence detection boxes =========================================
         # Merge tracked (tracked more than 2 frames) and lost (tracked more than 2 frames, lost tracks)
+        # 合并tracked集合和lost集合到轨迹池pool中
         pool = joint_tracks(tracked, self.lost)
 
         # Predict the current location with KF
+        # 用卡尔曼滤波去预测当前位置
         Track.multi_predict(pool)
 
         # Calculate cosine and IoU distances
+        # 计算轨迹池pool与detections_first的IOU距离和ReId距离
         cos_dists = matching.embedding_distance(pool, detections_first)
         iou_dists = matching.iou_distance(pool, detections_first)
 
