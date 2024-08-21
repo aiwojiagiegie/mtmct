@@ -493,7 +493,7 @@ class MTMCT(object):
             boxes = result.boxes.data.tolist()
             temp_add = []
             for obj in boxes:
-                if int(obj[5]) != 3 and int(obj[5]) != 0:
+                if int(obj[5]) in [2, 5, 7]:
                     temp_add.append(obj)
             if len(temp_add) == 0:
                 tensor_temp_add = torch.zeros((0, 6), dtype=torch.float16).cuda().half()
@@ -528,6 +528,7 @@ class MTMCT(object):
                             int(tracker.cam[-1]), tracker.global_id, item[0],
                             int(left), int(top), int(w), int(h)))
         return ans
+
     def debug_finished(self):
         with open(finished_txt, 'w') as output_file:
             for online_track in self.trackers.values():
@@ -549,14 +550,18 @@ class MTMCT(object):
                         if track.global_id is None:
                             continue
                         print(
-                            '%d %d %d %d %d %d %d -1 -1' % (int(track.cam[-1]), track.global_id , self.temp_align[track.cam][info[0]],
-                                                            int(left), int(top), int(w), int(h)),file=output_file)
+                            '%d %d %d %d %d %d %d -1 -1' % (
+                            int(track.cam[-1]), track.global_id, self.temp_align[track.cam][info[0]],
+                            int(left), int(top), int(w), int(h)), file=output_file)
+
+
 def caculate_tlwh(cxcywh):
     x = cxcywh[0] - cxcywh[2] / 2
     y = cxcywh[1] - cxcywh[3] / 2
     w = cxcywh[2]
     h = cxcywh[3]
     return np.array([x, y, w, h])
+
 
 def run():
     mtmct = MTMCT(opt)
@@ -575,15 +580,21 @@ def read_pkl_from_file(outputs_mtmct_pkl):
 
 finished_txt = 'outputs/result/finished.txt'
 result_dir = 'results'
+
+
 def debug():
     mtmct = read_pkl_from_file(outputs_mtmct_pkl)
     mtmct.debug_finished()
     calculate_results('outputs/ground_truth_validation.txt', finished_txt)
+
+
 def main():
     mtmct = run()
     # mtmct = read_pkl_from_file(outputs_mtmct_pkl)
     calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
     return mtmct
+
+
 if __name__ == '__main__':
     opt.version = 3
     mtmct_version = f'v{opt.version}'
