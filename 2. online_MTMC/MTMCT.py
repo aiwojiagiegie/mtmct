@@ -187,6 +187,7 @@ class MTMCT(object):
         self.next_global_id, self.dunn_index_prev = 0, -1e5
         self.clusters_dict = {}
         self.result = []
+        self.ReId = ReId('./reid/logs/Veri776/MBR_4G/0/')
 
     def run_mtmct(self):
         # Run
@@ -471,6 +472,8 @@ class MTMCT(object):
         with torch.autocast('cuda'):
             batch_patch = batch_patch[:det_count]
             batch_feat = self.feat_ext_model(batch_patch)
+        new_batch_feat = self.ReId.reid(batch_patch)
+        new_batch_feat = new_batch_feat.squeeze().cpu().numpy()
         batch_feat = batch_feat.squeeze().cpu().numpy()
         self.total_times['Ext'] += time.time() - self.start
         return batch_feat, detection
