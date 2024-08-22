@@ -1,5 +1,5 @@
 import os
-import pickle
+import dill as pickle
 
 import cv2
 import time
