@@ -21,7 +21,7 @@ from utils.scipy_linear_assignment import linear_assignment
 from utils.general import check_img_size, non_max_suppression, scale_coords
 from utils.utils import letterbox, class_agnostic_nms, pairwise_tracks_dist
 from yolov10.ultralytics import YOLOv10
-
+from ReId import ReId
 
 class Cluster:
     def __init__(self):
@@ -49,7 +49,8 @@ class Cluster:
     def cam_list(self):
         return [track.cam for track in self.tracks]
 
-
+def sigmoid(x):
+    return 1 / (1 + np.exp(-x))
 def prepare_align(cams, f_nums):
     temp_align = {}
     for cam in cams:
@@ -469,14 +470,25 @@ class MTMCT(object):
                     batch_patch[det_count] = torch.fliplr(patch) if self.cams[pdx] == 'c008' else patch
                     det_count += 1
         # Extract features
-        with torch.autocast('cuda'):
-            batch_patch = batch_patch[:det_count]
-            batch_feat = self.feat_ext_model(batch_patch)
+        batch_patch = batch_patch[:det_count]
+        # with torch.autocast('cuda'):
+        #     batch_feat = self.feat_ext_model(batch_patch)
         new_batch_feat = self.ReId.reid(batch_patch)
         new_batch_feat = new_batch_feat.squeeze().cpu().numpy()
-        batch_feat = batch_feat.squeeze().cpu().numpy()
+        # batch_feat = batch_feat.squeeze().cpu().numpy()
+        # 假设arr是一个形状为(4, 2048, ...)的数组
+        # 计算第二维的均值和标准差
+        means = new_batch_feat.mean(axis=1, keepdims=True)
+        stds = new_batch_feat.std(axis=1, keepdims=True)
+
+        # 防止除以零，可以加一个小的常数
+        stds[stds == 0] = 1e-10
+
+        # 进行标准化
+        new_batch_feat = (new_batch_feat - means) / stds
+        sigmoid_arr = np.apply_along_axis(sigmoid, 1, new_batch_feat)
         self.total_times['Ext'] += time.time() - self.start
-        return batch_feat, detection
+        return sigmoid_arr, detection
 
     def detect(self, batch_img, valid_cam):
         self.start = time.time()
