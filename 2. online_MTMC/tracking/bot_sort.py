@@ -98,7 +98,7 @@ def find_adjacent_bbox(all_boxes, target_box):
 
 
 class BoTSORT(object):
-    def __init__(self, opt , temp_align):
+    def __init__(self, opt ):
         # Initialize
         self.tracked = []
         self.lost = []
@@ -110,7 +110,7 @@ class BoTSORT(object):
         self.opt = opt
         self.frame_id = -1
         self.max_time_lost = int(opt.max_time_lost)
-        self.temp_align = temp_align
+        self.temp_align = None
 
     def update(self, cam, detections, features, de_temp_align):
         """
@@ -150,23 +150,23 @@ class BoTSORT(object):
         else:
             detections_first = []
 
-        # # 是否是红绿灯等待的车辆判断规则：1. 有相邻帧 2. 有bbox帧位置相近 IOU>0.6 3. reid 相似度距离小于0.3
-        # de_temp_align_cam_ = de_temp_align[cam]
-        # maybe_tracks = []
-        # if self.frame_id in de_temp_align_cam_:
-        #     real_fdx = de_temp_align_cam_[self.frame_id]
-        #     for finished_track in self.finished:
-        #         if abs(real_fdx - de_temp_align_cam_[finished_track.end_frame]) < 30:  # 满足条件1
-        #             target_boxes_index = find_adjacent_bbox(boxes, finished_track.obs_history[-1][1])
-        #             if target_boxes_index is not None:
-        #                 reid_dist = \
-        #                     cdist([finished_track.obs_history[-1][3]], [features[target_boxes_index]], 'cosine')[0][0]
-        #                 if reid_dist < 0.2:
-        #                     maybe_tracks.append(finished_track)
-        #                     finished_track.is_activated = True
-        #                     finished_track.state = TrackState.Tracked
-        #                     self.tracked.append(finished_track)
-        #                     self.finished.remove(finished_track)
+        # 是否是红绿灯等待的车辆判断规则：1. 有相邻帧 2. 有bbox帧位置相近 IOU>0.6 3. reid 相似度距离小于0.3
+        de_temp_align_cam_ = de_temp_align[cam]
+        maybe_tracks = []
+        if self.frame_id in de_temp_align_cam_:
+            real_fdx = de_temp_align_cam_[self.frame_id]
+            for finished_track in self.finished:
+                if abs(real_fdx - de_temp_align_cam_[finished_track.end_frame]) < 30:  # 满足条件1
+                    target_boxes_index = find_adjacent_bbox(boxes, finished_track.obs_history[-1][1])
+                    if target_boxes_index is not None:
+                        reid_dist = \
+                            cdist([finished_track.obs_history[-1][3]], [features[target_boxes_index]], 'cosine')[0][0]
+                        if reid_dist < 0.2:
+                            maybe_tracks.append(finished_track)
+                            finished_track.is_activated = True
+                            finished_track.state = TrackState.Tracked
+                            self.tracked.append(finished_track)
+                            self.finished.remove(finished_track)
         # Split into unactivated (tracked only 1 beginning frame) and tracked (tracked more than 2 frames)
         # 将现有的track分成两部分tracked, unactivated
         tracked, unactivated = [], []
@@ -300,7 +300,7 @@ class BoTSORT(object):
         # Update state
         for track in self.lost:
             # Finish track temporal distance
-            if de_temp_align[cam][self.frame_id] - de_temp_align[cam][track.end_frame] > self.max_time_lost:
+            if self.frame_id - track.end_frame > self.max_time_lost:
                 track.mark_finished()
                 finished.append(track)
 

@@ -160,12 +160,11 @@ class MTMCT(object):
         # Prepare others
         self.datasets, self.trackers, self.f_nums = {}, {}, []
         self.roi_masks, self.overlap_regions_cam2cam = {}, {}
-        self.temp_align = prepare_align(self.cams, self.f_nums)
         for cam in self.cams:
             # Prepare 1
             img_dir = os.path.join(opt.data_dir, cam) + '/frame/*'
             self.datasets[cam] = iter(LoadImages(img_dir, img_size=self.img_size, stride=self.stride))
-            self.trackers[cam] = BoTSORT(opt,self.temp_align)
+            self.trackers[cam] = BoTSORT(opt)
             self.f_nums.append(self.datasets[cam].nf)
 
             # Prepare 2
@@ -175,6 +174,9 @@ class MTMCT(object):
                 self.overlap_regions_cam2cam[cam][cam_] = cv2.imread(
                     './preliminary/overlap_zones/%s_%s.png' % (cam, cam_),
                     cv2.IMREAD_GRAYSCALE) if cam_ != cam else None
+        self.temp_align = prepare_align(self.cams, self.f_nums)
+        for tracker in self.trackers.values():
+            tracker.temp_align = self.temp_align
         # Warm-up models
         with torch.autocast('cuda'):
             for _ in range(10):
@@ -349,7 +351,8 @@ class MTMCT(object):
             if w * h / self.img_w / self.img_h < 0.003 or 0.3 < w * h / self.img_w / self.img_h:
                 continue
             format = '%d %d %d %d %d %d %d -1 -1' % (
-            int(track.cam[-1]), track.global_id, self.temp_align[track.cam][fdx], int(left), int(top), int(w), int(h))
+                int(track.cam[-1]), track.global_id, self.temp_align[track.cam][fdx], int(left), int(top), int(w),
+                int(h))
             self.result.append(format)
 
     def filter_tracks_by_overlap(self, online_tracks, p_dists):
@@ -423,7 +426,7 @@ class MTMCT(object):
         # Run Multi-target Single-Camera Tracking and online tracks
         online_tracks_raw = {}
         for cam in self.cams:
-            online_tracks_raw[cam] = self.trackers[cam].update(cam, detection[cam], feat[cam],self.temp_align)
+            online_tracks_raw[cam] = self.trackers[cam].update(cam, detection[cam], feat[cam], self.temp_align)
         self.total_times['MTSC'] += time.time() - start
         return online_tracks_raw
 
@@ -608,7 +611,7 @@ def main():
 
 
 if __name__ == '__main__':
-    opt.version = 4
+    opt.version = 5
     mtmct_version = f'v{opt.version}'
     outputs_mtmct_pkl = 'outputs/mtmct.pkl'
     main()
