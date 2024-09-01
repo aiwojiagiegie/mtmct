@@ -160,11 +160,12 @@ class MTMCT(object):
         # Prepare others
         self.datasets, self.trackers, self.f_nums = {}, {}, []
         self.roi_masks, self.overlap_regions_cam2cam = {}, {}
+        self.temp_align = prepare_align(self.cams, self.f_nums)
         for cam in self.cams:
             # Prepare 1
             img_dir = os.path.join(opt.data_dir, cam) + '/frame/*'
             self.datasets[cam] = iter(LoadImages(img_dir, img_size=self.img_size, stride=self.stride))
-            self.trackers[cam] = BoTSORT(opt)
+            self.trackers[cam] = BoTSORT(opt,self.temp_align)
             self.f_nums.append(self.datasets[cam].nf)
 
             # Prepare 2
@@ -182,7 +183,6 @@ class MTMCT(object):
                     torch.rand((10, 3, opt.patch_size[0], opt.patch_size[1]), device='cuda').half())
 
         # Temporal alignment 时间对齐的序列
-        self.temp_align = prepare_align(self.cams, self.f_nums)
         self.img_h, self.img_w = opt.img_ori_size
         self.next_global_id, self.dunn_index_prev = 0, -1e5
         self.clusters_dict = {}
@@ -232,7 +232,8 @@ class MTMCT(object):
         for cdx, cam in enumerate(self.cams):
             # Read
             valid_cam[cam] = True
-            path, img, img_ori, _ = self.datasets[cam].__next__(cam, self.temp_align[cam][fdx])
+            temp_align_cam_fdx_ = self.temp_align[cam][fdx]
+            path, img, img_ori, _ = self.datasets[cam].__next__(cam, temp_align_cam_fdx_)
             # Check 这里检查是否有这样的图片存在文件夹中，如果没有则跳过然后到下一个摄像头中
             if img is None:
                 valid_cam[cam] = False
@@ -303,7 +304,8 @@ class MTMCT(object):
                             if online_tracks[info[0]].global_id not in online_global_ids[online_tracks[tdx].cam]:
                                 # Assign global id, Collect
                                 online_tracks[tdx].global_id = info[1]
-                                self.clusters_dict[info[1]].add_track(online_tracks[tdx])
+                                if info[1] in self.clusters_dict:
+                                    self.clusters_dict[info[1]].add_track(online_tracks[tdx])
                                 break
         # Get remaining current tracks
         remain_tracks = [track for track in online_tracks if track.global_id is None]
@@ -346,9 +348,9 @@ class MTMCT(object):
             # Filter with size, Since gt does not include small boxes
             if w * h / self.img_w / self.img_h < 0.003 or 0.3 < w * h / self.img_w / self.img_h:
                 continue
-            self.result.append(
-                '%d %d %d %d %d %d %d -1 -1' % (int(track.cam[-1]), track.global_id, self.temp_align[track.cam][fdx],
-                                                int(left), int(top), int(w), int(h)))
+            format = '%d %d %d %d %d %d %d -1 -1' % (
+            int(track.cam[-1]), track.global_id, self.temp_align[track.cam][fdx], int(left), int(top), int(w), int(h))
+            self.result.append(format)
 
     def filter_tracks_by_overlap(self, online_tracks, p_dists):
         for i in range(len(online_tracks)):
@@ -421,7 +423,7 @@ class MTMCT(object):
         # Run Multi-target Single-Camera Tracking and online tracks
         online_tracks_raw = {}
         for cam in self.cams:
-            online_tracks_raw[cam] = self.trackers[cam].update(cam, detection[cam], feat[cam])
+            online_tracks_raw[cam] = self.trackers[cam].update(cam, detection[cam], feat[cam],self.temp_align)
         self.total_times['MTSC'] += time.time() - start
         return online_tracks_raw
 
@@ -551,8 +553,8 @@ class MTMCT(object):
                             continue
                         print(
                             '%d %d %d %d %d %d %d -1 -1' % (
-                            int(track.cam[-1]), track.global_id, self.temp_align[track.cam][info[0]],
-                            int(left), int(top), int(w), int(h)), file=output_file)
+                                int(track.cam[-1]), track.global_id, self.temp_align[track.cam][info[0]],
+                                int(left), int(top), int(w), int(h)), file=output_file)
 
 
 def caculate_tlwh(cxcywh):
@@ -583,9 +585,19 @@ result_dir = 'results'
 
 
 def debug():
+    from tracking import matching
+    from scipy.spatial.distance import cdist
+
     mtmct = read_pkl_from_file(outputs_mtmct_pkl)
-    mtmct.debug_finished()
-    calculate_results('outputs/ground_truth_validation.txt', finished_txt)
+    # mtmct.debug_finished()
+    track14 = mtmct.trackers['c008'].finished[60]
+    reid14 = track14.obs_history[-1][3]
+    track94 = mtmct.trackers['c008'].finished[65]
+    reid94 = track94.obs_history[0][3]
+    reid_dis = cdist([reid14], [reid94], 'cosine')
+    reid_dis = reid_dis[0][0]
+    print(reid_dis)
+    # calculate_results('outputs/ground_truth_validation.txt', finished_txt)
 
 
 def main():
@@ -596,7 +608,7 @@ def main():
 
 
 if __name__ == '__main__':
-    opt.version = 3
+    opt.version = 4
     mtmct_version = f'v{opt.version}'
     outputs_mtmct_pkl = 'outputs/mtmct.pkl'
     main()

@@ -75,7 +75,7 @@ def calculate_results(test, pred,cam_id, mread=False, dstype='validation',
 
 
 if __name__ == '__main__':
-    test_path, pred_path = 'ground_truth_validation.txt', f'result/v1.txt'
+    test_path, pred_path = 'ground_truth_validation.txt', f'result/v3.txt'
 
     test = readData(test_path)
     unique_camera_ids = test['CameraId'].unique()

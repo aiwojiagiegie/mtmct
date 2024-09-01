@@ -135,7 +135,7 @@ def draw_bboxes_all_in(video_path, bbox_data_gt, bbox_data_pred, output_path, ca
                 # 绘制边界框
                 cv2.rectangle(frame, (left, top), (left + width, top + height), pred_bbox_colors[car_id], 2)
                 # 绘制文本
-                cv2.putText(frame, f'pred_id: {car_id}', (left, top + 5), 0, 1, (255, 255, 255), 2, 16)
+                cv2.putText(frame, f'pred_id: {car_id}', (left, top + height - 5), 0, 1, (255, 255, 255), 2, 16)
 
         # 将帧写入输出视频
         out.write(frame)
@@ -263,7 +263,7 @@ def generate_depart():
     target_info, car_bbox_colors = get_bbox_data(detection_path)
     for camera_id, frame_bboxes in target_info.items():
         draw_bboxes(f'../../dataset/AIC19/validation/S02/c00{camera_id}/vdo.avi', frame_bboxes,
-                    f'debug/target/c00{camera_id}.mp4', car_bbox_colors)
+                    f'debug/{version}/target/c00{camera_id}.mp4', car_bbox_colors)
 
 
 def generate_all_in():
@@ -279,7 +279,7 @@ def generate_all_in():
     for camera_id, frame_bboxes in all_in_bbox_info.items():
         draw_bboxes_all_in(f'../../dataset/AIC19/validation/S02/c00{camera_id}/vdo.avi', frame_bboxes['gt'],
                            frame_bboxes['pred'],
-                           f'debug/allIn/c00{camera_id}.mp4', gt_bbox_colors, pred_bbox_colors)
+                           f'debug/{version}/allIn/c00{camera_id}.mp4', gt_bbox_colors, pred_bbox_colors)
 
 
 def generate_remove_duplicate():
@@ -296,15 +296,14 @@ def generate_remove_duplicate():
         draw_bboxes_remove_duplicate(f'../../dataset/AIC19/validation/S02/c00{camera_id}/vdo.avi',
                                      frame_bboxes['gt'],
                                      frame_bboxes['pred'],
-                                     f'debug/remove_duplicate/c00{camera_id}.mp4', gt_bbox_colors, pred_bbox_colors)
+                                     f'debug/{version}/remove_duplicate/c00{camera_id}.mp4', gt_bbox_colors, pred_bbox_colors)
 
 
 if __name__ == '__main__':
-    # detection_path = f'result/{MTMCT.mtmct_version}.txt'
-    detection_path = f'result/finished.txt'
-    # gt_path = 'ground_truth_validation.txt'
-    # generate_remove_duplicate()
-    target_info, car_bbox_colors = get_bbox_data(detection_path)
-    for camera_id, frame_bboxes in target_info.items():
-        draw_bboxes(f'../../dataset/AIC19/validation/S02/c00{camera_id}/vdo.avi', frame_bboxes,
-                    f'debug/lost_track/c00{camera_id}.mp4', car_bbox_colors)
+    version = 'v4'
+    detection_path = f'result/{version}.txt'
+    gt_path = 'ground_truth_validation.txt'
+    generate_all_in()
+    generate_depart()
+    generate_remove_duplicate()
+

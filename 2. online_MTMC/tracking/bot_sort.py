@@ -2,6 +2,7 @@ import numpy as np
 from tracking import matching
 from tracking.kalman_filter import KalmanFilter
 from tracking.track import TrackState, BaseTrack, Track
+from scipy.spatial.distance import cdist
 
 
 def joint_tracks(t_list_a, t_list_b):
@@ -58,8 +59,46 @@ def remove_duplicate_tracks(tracks_a, tracks_b):
     return res_a, res_b
 
 
+def calculate_iou(box1, box2):
+    # 计算两个边界框的交并比（IOU）
+    x1 = max(box1[0], box2[0])
+    y1 = max(box1[1], box2[1])
+    x2 = min(box1[0] + box1[2], box2[0] + box2[2])
+    y2 = min(box1[1] + box1[3], box2[1] + box2[3])
+
+    # 计算相交面积
+    intersection_area = max(0, x2 - x1) * max(0, y2 - y1)
+
+    # 计算两个边界框面积
+    area_box1 = box1[2] * box1[3]
+    area_box2 = box2[2] * box2[3]
+
+    # 计算并集面积
+    union_area = area_box1 + area_box2 - intersection_area
+
+    # 避免除以零的情况
+    if union_area == 0:
+        return 0
+
+    return intersection_area / union_area
+
+
+def find_adjacent_bbox(all_boxes, target_box):
+    # 初始化最大IOU为0，以及对应的边界框
+    max_iou = 0.6
+    adjacent_index = None
+
+    for index, box in enumerate(all_boxes):
+        iou = calculate_iou(box, target_box)
+        if iou > max_iou:
+            max_iou = iou
+            adjacent_index = index
+
+    return adjacent_index
+
+
 class BoTSORT(object):
-    def __init__(self, opt):
+    def __init__(self, opt , temp_align):
         # Initialize
         self.tracked = []
         self.lost = []
@@ -71,8 +110,9 @@ class BoTSORT(object):
         self.opt = opt
         self.frame_id = -1
         self.max_time_lost = int(opt.max_time_lost)
+        self.temp_align = temp_align
 
-    def update(self, cam, detections, features):
+    def update(self, cam, detections, features, de_temp_align):
         """
         更新SCT的跟踪数据
         """
@@ -110,6 +150,23 @@ class BoTSORT(object):
         else:
             detections_first = []
 
+        # # 是否是红绿灯等待的车辆判断规则：1. 有相邻帧 2. 有bbox帧位置相近 IOU>0.6 3. reid 相似度距离小于0.3
+        # de_temp_align_cam_ = de_temp_align[cam]
+        # maybe_tracks = []
+        # if self.frame_id in de_temp_align_cam_:
+        #     real_fdx = de_temp_align_cam_[self.frame_id]
+        #     for finished_track in self.finished:
+        #         if abs(real_fdx - de_temp_align_cam_[finished_track.end_frame]) < 30:  # 满足条件1
+        #             target_boxes_index = find_adjacent_bbox(boxes, finished_track.obs_history[-1][1])
+        #             if target_boxes_index is not None:
+        #                 reid_dist = \
+        #                     cdist([finished_track.obs_history[-1][3]], [features[target_boxes_index]], 'cosine')[0][0]
+        #                 if reid_dist < 0.2:
+        #                     maybe_tracks.append(finished_track)
+        #                     finished_track.is_activated = True
+        #                     finished_track.state = TrackState.Tracked
+        #                     self.tracked.append(finished_track)
+        #                     self.finished.remove(finished_track)
         # Split into unactivated (tracked only 1 beginning frame) and tracked (tracked more than 2 frames)
         # 将现有的track分成两部分tracked, unactivated
         tracked, unactivated = [], []
@@ -243,7 +300,7 @@ class BoTSORT(object):
         # Update state
         for track in self.lost:
             # Finish track temporal distance
-            if self.frame_id - track.end_frame > self.max_time_lost:
+            if de_temp_align[cam][self.frame_id] - de_temp_align[cam][track.end_frame] > self.max_time_lost:
                 track.mark_finished()
                 finished.append(track)
 

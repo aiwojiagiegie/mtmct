@@ -491,8 +491,10 @@ def my_print_result(summary):
             else:
                 print(format_str.format(key, baseline[key], value, difference,symbol, info[key]))
 if __name__ == '__main__':
+    detection_path = f'result/v4.txt'
+    gt_path = 'ground_truth_validation.txt'
     # calculate_results('ground_truth_validation.txt', f'ground_truth_validation.txt')
-    calculate_results('ground_truth_validation.txt', 'result/v3.txt')
+    calculate_results(gt_path, detection_path)
     # calculate_results('test_gt.txt','test_pred.txt')
     # args = get_args();
     # if not args.data or len(args.data) < 2:

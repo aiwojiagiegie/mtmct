@@ -26,7 +26,7 @@ def writeDataToTXT(df, filepath, delimiter='\t'):
         file.write('\n')
 
 if __name__ == '__main__':
-    detection_path = 'result/v1.txt'
+    detection_path = 'result/v3.txt'
     pred_data = getData(detection_path)
     pred_data.sort_values(by=['Id', 'CameraId', 'FrameId'], inplace=True)
     writeDataToTXT(df=pred_data, filepath='debug_sort/results.txt')
