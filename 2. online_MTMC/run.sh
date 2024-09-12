@@ -1,0 +1,1 @@
+python MTMCT.py -train=True -batch=64 -epoch=400 -gpu=3

@@ -6,8 +6,8 @@ class Opts:
         self.parser = argparse.ArgumentParser()
 
         # Options for detection
-        self.parser.add_argument('--det_name', type=str, default='yolov7-e6e')
-        self.parser.add_argument('--det_weights', type=str, default='./preliminary/det_weights/')
+        self.parser.add_argument('--det_name', type=str, default='best_multiple3')
+        self.parser.add_argument('--det_weights', type=str, default='./preliminary/det_weights/my/')
         self.parser.add_argument('--img_size', type=int, default=[720, 1280], help='inference size (pixels)')
         self.parser.add_argument('--classes', type=int, default=[2, 5, 7], help='filter by class')
         self.parser.add_argument('--conf_thres', type=float, default=0.1, help='object confidence threshold')
@@ -34,11 +34,15 @@ class Opts:
         self.parser.add_argument("--mtmc_match_thr", type=float, default=0.65)
 
         # Others
-        self.parser.add_argument('--data_dir', type=str, default='/data2/zhangkun/project/Fast_Online_MTMCT/dataset/AIC19/validation/S02')
+        self.parser.add_argument('--data_dir', type=str, default='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/AIC19/validation/S02')
         self.parser.add_argument('--output_dir', type=str, default='./outputs/result/')
         self.parser.add_argument('--min_box_size', type=int, default=0.001, help='minimum box size')
         self.parser.add_argument('--img_ori_size', type=int, default=[1080, 1920], help='original image size (pixels)')
         self.parser.add_argument('--version', type=int, default=1, help='original image size (pixels)')
+        self.parser.add_argument("-train", help="是否训练新的模型", dest="train", type=bool, default="")
+        self.parser.add_argument("-epoch", help="训练轮次", dest="epoch", type=int, default="300")
+        self.parser.add_argument("-batch", help="训练batch", dest="batch", type=int, default="2")
+        self.parser.add_argument("-gpu", help="训练用的卡id", dest="gpu", type=int, default="0")
 
     def parse(self):
         return self.parser.parse_args()

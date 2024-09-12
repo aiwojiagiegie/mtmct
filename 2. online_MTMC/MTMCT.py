@@ -1,4 +1,7 @@
+import argparse
 import os
+import random
+
 import dill as pickle
 
 import cv2
@@ -127,7 +130,7 @@ def prepare_align(cams, f_nums):
 
 
 class MTMCT(object):
-    def __init__(self, opt):
+    def __init__(self, opt,YOLOv10_detect_model_path=None):
         self.result_path = None
         self.opt = opt
         self.start = time.time()
@@ -136,8 +139,10 @@ class MTMCT(object):
         # Load detection model
         self.det_model = attempt_load(opt.det_weights + opt.det_name + '.pt')
         self.det_model = self.det_model.cuda().eval().half()
-        self.YOLOv10_detect_model = YOLOv10(opt.det_weights + opt.det_name + '.pt')
-
+        if YOLOv10_detect_model_path is None:
+            self.YOLOv10_detect_model = YOLOv10(opt.det_weights + opt.det_name + '.pt')
+        else:
+            self.YOLOv10_detect_model = YOLOv10(YOLOv10_detect_model_path)
         # For time measurement
         self.total_times = {'Det': 0, 'Ext': 0, 'MTSC': 0, 'MTMC': 0}
         self.cams = os.listdir(opt.data_dir)
@@ -207,6 +212,9 @@ class MTMCT(object):
 
             # 跨摄像头跟踪
             self.mtmct_online(fdx, online_tracks_raw)
+        directory = os.path.dirname(self.result_path)
+        if not os.path.exists(directory):
+            os.makedirs(directory)
         with open(self.result_path, 'w') as result_txt:
             for r in self.result:
                 print(r, file=result_txt)
@@ -484,17 +492,29 @@ class MTMCT(object):
         self.start = time.time()
         # 目标检测阶段
         # Detect =====================================================================================================
-        with torch.autocast('cuda'):
-            preds = self.det_model(batch_img[list(valid_cam.values())], augment=opt.augment)[0]
-        # NMS之后是最终的检测结果
-        preds = non_max_suppression(preds, opt.conf_thres, opt.iou_thres,
-                                    classes=opt.classes, agnostic=opt.agnostic_nms)
-        # Insert empty results
-        for cam_index, cam in enumerate(self.cams):
-            if not valid_cam[cam]:
-                preds.insert(cam_index, torch.zeros((0, 6)).cuda().half())
+        # with torch.autocast('cuda'):
+        #     preds = self.det_model(batch_img[list(valid_cam.values())], augment=opt.augment)[0]
+        # # NMS之后是最终的检测结果
+        # preds = non_max_suppression(preds, opt.conf_thres, opt.iou_thres,
+        #                             classes=opt.classes, agnostic=opt.agnostic_nms)
+        # for cam_index, cam in enumerate(self.cams):
+        #     if not valid_cam[cam]:
+        #         preds.insert(cam_index, torch.zeros((0, 6)).cuda().half())
+        preds_result = self.YOLOv10_detect_model(batch_img)
+        ans = []
+        for result in preds_result:
+            boxes = result.boxes.data.tolist()
+            temp_add = []
+            for obj in boxes:
+                if int(obj[5]) in [2, 5, 7]:
+                    temp_add.append(obj)
+            if len(temp_add) == 0:
+                tensor_temp_add = torch.zeros((0, 6), dtype=torch.float16).cuda().half()
+            else:
+                tensor_temp_add = torch.tensor(temp_add, dtype=torch.float16).cuda().half()
+            ans.append(tensor_temp_add)
         self.total_times['Det'] += time.time() - self.start
-        return preds
+        return ans
 
     def caculate_result(self):
         ans = []
@@ -597,10 +617,40 @@ def main():
     calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
     return mtmct
 
+# 模型配置文件
+model_yaml_path = "./yolov10/ultralytics/cfg/models/v10/yolov10n.yaml"
+# 数据集配置文件
+data_yaml_path = './yolov10/datasets/multi_class/data.yaml'
+# 预训练模型
+pre_model_name = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/yolov10/models/yolov10n.pt'
 
 if __name__ == '__main__':
-    opt.version = 6
-    mtmct_version = f'v{opt.version}'
-    outputs_mtmct_pkl = 'outputs/mtmct.pkl'
-    main()
-    # debug()
+    if opt.train:
+        # 加载预训练模型
+        # model = YOLOv10(model_yaml_path).load(pre_model_name)
+        model = YOLOv10(model_yaml_path)
+        pre_model_name_last = pre_model_name.split('/')[-1]
+        # 训练模型
+        epochs = opt.epoch
+        batch = opt.batch
+        # 生成一个六位的随机数
+        random_suffix = random.randint(100000, 999999)
+        save_path = f'UA-DETRAC_pre/model_name_{pre_model_name_last}/epochs_{epochs}/batch_{batch}/{random_suffix}'
+        results = model.train(data=data_yaml_path,
+                              epochs=epochs,
+                              batch=batch,
+                              name=f"{save_path}", device='0')
+        outputs_mtmct_pkl = f'{save_path}/mtmct.pkl'
+        mtmct_version = f'version/{save_path}/v1'
+        mtmct = MTMCT(opt,f'../../yolov10/runs/detect/{save_path}/weights/best.pt')
+        with torch.no_grad():
+            mtmct.run_mtmct()
+        with open(outputs_mtmct_pkl, 'wb') as f:
+            pickle.dump(mtmct, f)
+        calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
+    else:
+        opt.version = 6
+        mtmct_version = f'version/v{opt.version}'
+        outputs_mtmct_pkl = 'outputs/mtmct.pkl'
+        main()
+        # debug()
