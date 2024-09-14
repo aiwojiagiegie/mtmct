@@ -140,7 +140,7 @@ class MTMCT(object):
         self.det_model = attempt_load(opt.det_weights + opt.det_name + '.pt')
         self.det_model = self.det_model.cuda().eval().half()
         if YOLOv10_detect_model_path is None:
-            self.YOLOv10_detect_model = YOLOv10(opt.det_weights + opt.det_name + '.pt')
+            self.YOLOv10_detect_model = YOLOv10(opt.yolo10_model)
         else:
             self.YOLOv10_detect_model = YOLOv10(YOLOv10_detect_model_path)
         # For time measurement
@@ -580,8 +580,8 @@ def run():
     mtmct = MTMCT(opt)
     with torch.no_grad():
         mtmct.run_mtmct()
-    with open(outputs_mtmct_pkl, 'wb') as f:
-        pickle.dump(mtmct, f)
+    # with open(outputs_mtmct_pkl, 'wb') as f:
+    #     pickle.dump(mtmct, f)
     return mtmct
 
 
@@ -622,10 +622,11 @@ model_yaml_path = "./yolov10/ultralytics/cfg/models/v10/yolov10n.yaml"
 # 数据集配置文件
 data_yaml_path = './yolov10/datasets/multi_class/data.yaml'
 # 预训练模型
-pre_model_name = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/yolov10/models/yolov10n.pt'
 
 if __name__ == '__main__':
     if opt.train:
+        pretrain_type = opt.pretrain_type
+        pre_model_name = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/yolov10/models/yolov10{pretrain_type}.pt'
         # 加载预训练模型
         # model = YOLOv10(model_yaml_path).load(pre_model_name)
         model = YOLOv10(model_yaml_path)
@@ -639,8 +640,8 @@ if __name__ == '__main__':
         results = model.train(data=data_yaml_path,
                               epochs=epochs,
                               batch=batch,
-                              name=f"{save_path}", device='0')
-        outputs_mtmct_pkl = f'{save_path}/mtmct.pkl'
+                              name=f"{save_path}", device=opt.gpu)
+        outputs_mtmct_pkl = f'../../yolov10/runs/detect/{save_path}/mtmct.pkl'
         mtmct_version = f'version/{save_path}/v1'
         mtmct = MTMCT(opt,f'../../yolov10/runs/detect/{save_path}/weights/best.pt')
         with torch.no_grad():

@@ -151,22 +151,22 @@ class BoTSORT(object):
             detections_first = []
 
         # 是否是红绿灯等待的车辆判断规则：1. 有相邻帧 2. 有bbox帧位置相近 IOU>0.6 3. reid 相似度距离小于0.3
-        de_temp_align_cam_ = de_temp_align[cam]
-        maybe_tracks = []
-        if self.frame_id in de_temp_align_cam_:
-            real_fdx = de_temp_align_cam_[self.frame_id]
-            for finished_track in self.finished:
-                if abs(real_fdx - de_temp_align_cam_[finished_track.end_frame]) < 30:  # 满足条件1
-                    target_boxes_index = find_adjacent_bbox(boxes, finished_track.obs_history[-1][1])
-                    if target_boxes_index is not None:
-                        reid_dist = \
-                            cdist([finished_track.obs_history[-1][3]], [features[target_boxes_index]], 'cosine')[0][0]
-                        if reid_dist < 0.2:
-                            maybe_tracks.append(finished_track)
-                            finished_track.is_activated = True
-                            finished_track.state = TrackState.Tracked
-                            self.tracked.append(finished_track)
-                            self.finished.remove(finished_track)
+        # de_temp_align_cam_ = de_temp_align[cam]
+        # maybe_tracks = []
+        # if self.frame_id in de_temp_align_cam_:
+        #     real_fdx = de_temp_align_cam_[self.frame_id]
+        #     for finished_track in self.finished:
+        #         if abs(real_fdx - de_temp_align_cam_[finished_track.end_frame]) < 30:  # 满足条件1
+        #             target_boxes_index = find_adjacent_bbox(boxes, finished_track.obs_history[-1][1])
+        #             if target_boxes_index is not None:
+        #                 reid_dist = \
+        #                     cdist([finished_track.obs_history[-1][3]], [features[target_boxes_index]], 'cosine')[0][0]
+        #                 if reid_dist < 0.2:
+        #                     maybe_tracks.append(finished_track)
+        #                     finished_track.is_activated = True
+        #                     finished_track.state = TrackState.Tracked
+        #                     self.tracked.append(finished_track)
+        #                     self.finished.remove(finished_track)
         # Split into unactivated (tracked only 1 beginning frame) and tracked (tracked more than 2 frames)
         # 将现有的track分成两部分tracked, unactivated
         tracked, unactivated = [], []

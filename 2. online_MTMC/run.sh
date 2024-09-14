@@ -1,1 +1,1 @@
-python MTMCT.py -train=True -batch=64 -epoch=400 -gpu=3
+nohup python MTMCT.py -train=True -batch=64 -epoch=400 -gpu=1 > log6.log &

@@ -457,7 +457,7 @@ info = {
 }
 baseline = {'idf1': 0.7825229312555478, 'idp': 0.8095918367346939, 'idr': 0.7572055735827448, 'recall': 0.8324107654132468, 'precision': 0.89, 'num_unique_objects': 145, 'mostly_tracked': 105, 'partially_tracked': 35, 'mostly_lost': 5, 'num_false_positives': 2156, 'num_misses': 3512, 'num_switches': 43, 'num_fragmentations': 240, 'mota': 0.7274766176751288, 'motp': 0.2514508515359548, 'num_transfer': 46, 'num_ascend': 10, 'num_migrate': 18, 'num_frames': 7494, 'idfp': 3732.0, 'idfn': 5088.0, 'idtp': 15868.0}
 
-def calculate_results(test_path, pred_path, mread=False, dstype='validation', roidir='../../../Fast_Online_MTMCT/dataset/AIC19/validation/S02'):
+def calculate_results(test_path, pred_path, mread=False, dstype='validation', roidir='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/AIC19/validation/S02'):
     test = readData(test_path)
     pred = readData(pred_path)
     try:
@@ -491,7 +491,7 @@ def my_print_result(summary):
             else:
                 print(format_str.format(key, baseline[key], value, difference,symbol, info[key]))
 if __name__ == '__main__':
-    detection_path = f'result/version/v6.txt'
+    detection_path = f'./result/version/v6.txt'
     gt_path = 'ground_truth_validation.txt'
     # calculate_results('ground_truth_validation.txt', f'ground_truth_validation.txt')
     calculate_results(gt_path, detection_path)
