@@ -6,8 +6,8 @@ class Opts:
         self.parser = argparse.ArgumentParser()
 
         # Options for detection
-        self.parser.add_argument('--det_name', type=str, default='best_multiple3')
-        self.parser.add_argument('--det_weights', type=str, default='./preliminary/det_weights/my/')
+        self.parser.add_argument('--det_name', type=str, default='best')
+        self.parser.add_argument('--det_weights', type=str, default='./preliminary/det_weights/')
         self.parser.add_argument('--img_size', type=int, default=[720, 1280], help='inference size (pixels)')
         self.parser.add_argument('--classes', type=int, default=[2, 5, 7], help='filter by class')
         self.parser.add_argument('--conf_thres', type=float, default=0.1, help='object confidence threshold')
@@ -43,7 +43,7 @@ class Opts:
         self.parser.add_argument("-epoch", help="训练轮次", dest="epoch", type=int, default="300")
         self.parser.add_argument("-batch", help="训练batch", dest="batch", type=int, default="2")
         self.parser.add_argument("-gpu", help="训练用的卡id", dest="gpu", type=int, default="0")
-        self.parser.add_argument("-yolo10_model", help="yolo模型权重", dest="yolo10_model", type=str, default="/home/chatmindai/project/zhangkun/yolov10/runs/detect/UA-DETRAC_pre/model_name_yolov10n.pt/epochs_400/batch_8/115846/weights/best.pt")
+        self.parser.add_argument("-yolo10_model", help="yolo模型权重", dest="yolo10_model", type=str, default="./preliminary/det_weights/my/best_multiple3.pt")
         self.parser.add_argument("-pretrain_type", help="yolo预训练模型类型", dest="pretrain_type", type=str, default="s")
 
     def parse(self):

@@ -137,8 +137,8 @@ class MTMCT(object):
 
         # Load models ====================================================================================================
         # Load detection model
-        self.det_model = attempt_load(opt.det_weights + opt.det_name + '.pt')
-        self.det_model = self.det_model.cuda().eval().half()
+        # self.det_model = attempt_load(opt.det_weights + opt.det_name + '.pt')
+        # self.det_model = self.det_model.cuda().eval().half()
         if YOLOv10_detect_model_path is None:
             self.YOLOv10_detect_model = YOLOv10(opt.yolo10_model)
         else:
@@ -146,7 +146,8 @@ class MTMCT(object):
         # For time measurement
         self.total_times = {'Det': 0, 'Ext': 0, 'MTSC': 0, 'MTMC': 0}
         self.cams = os.listdir(opt.data_dir)
-        self.stride = int(self.det_model.stride.max())
+        self.stride = 32
+        # self.stride = int(self.det_model.stride.max())
         self.img_size = opt.img_size.copy()
         self.img_size[0] = check_img_size(opt.img_size[0], s=self.stride)
         self.img_size[1] = check_img_size(opt.img_size[1], s=self.stride)
@@ -185,7 +186,6 @@ class MTMCT(object):
         # Warm-up models
         with torch.autocast('cuda'):
             for _ in range(10):
-                self.det_model(torch.rand((4, 3, self.img_size[0], self.img_size[1]), device='cuda').half())
                 self.feat_ext_model(
                     torch.rand((10, 3, opt.patch_size[0], opt.patch_size[1]), device='cuda').half())
 
