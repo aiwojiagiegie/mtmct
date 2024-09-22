@@ -1,4 +1,7 @@
+import argparse
 import os
+import random
+
 import dill as pickle
 
 import cv2
@@ -128,21 +131,24 @@ def prepare_align(cams, f_nums):
 
 
 class MTMCT(object):
-    def __init__(self, opt):
+    def __init__(self, opt,YOLOv10_detect_model_path=None):
         self.result_path = None
         self.opt = opt
         self.start = time.time()
 
         # Load models ====================================================================================================
         # Load detection model
-        self.det_model = attempt_load(opt.det_weights + opt.det_name + '.pt')
-        self.det_model = self.det_model.cuda().eval().half()
-        self.YOLOv10_detect_model = YOLOv10(opt.det_weights + opt.det_name + '.pt')
-
+        # self.det_model = attempt_load(opt.det_weights + opt.det_name + '.pt')
+        # self.det_model = self.det_model.cuda().eval().half()
+        if YOLOv10_detect_model_path is None:
+            self.YOLOv10_detect_model = YOLOv10(opt.yolo10_model)
+        else:
+            self.YOLOv10_detect_model = YOLOv10(YOLOv10_detect_model_path)
         # For time measurement
         self.total_times = {'Det': 0, 'Ext': 0, 'MTSC': 0, 'MTMC': 0}
         self.cams = os.listdir(opt.data_dir)
-        self.stride = int(self.det_model.stride.max())
+        self.stride = 32
+        # self.stride = int(self.det_model.stride.max())
         self.img_size = opt.img_size.copy()
         self.img_size[0] = check_img_size(opt.img_size[0], s=self.stride)
         self.img_size[1] = check_img_size(opt.img_size[1], s=self.stride)
@@ -175,15 +181,16 @@ class MTMCT(object):
                 self.overlap_regions_cam2cam[cam][cam_] = cv2.imread(
                     './preliminary/overlap_zones/%s_%s.png' % (cam, cam_),
                     cv2.IMREAD_GRAYSCALE) if cam_ != cam else None
+        self.temp_align = prepare_align(self.cams, self.f_nums)
+        for tracker in self.trackers.values():
+            tracker.temp_align = self.temp_align
         # Warm-up models
         with torch.autocast('cuda'):
             for _ in range(10):
-                self.det_model(torch.rand((4, 3, self.img_size[0], self.img_size[1]), device='cuda').half())
                 self.feat_ext_model(
                     torch.rand((10, 3, opt.patch_size[0], opt.patch_size[1]), device='cuda').half())
 
         # Temporal alignment 时间对齐的序列
-        self.temp_align = prepare_align(self.cams, self.f_nums)
         self.img_h, self.img_w = opt.img_ori_size
         self.next_global_id, self.dunn_index_prev = 0, -1e5
         self.clusters_dict = {}
@@ -207,6 +214,9 @@ class MTMCT(object):
 
             # 跨摄像头跟踪
             self.mtmct_online(fdx, online_tracks_raw)
+        directory = os.path.dirname(self.result_path)
+        if not os.path.exists(directory):
+            os.makedirs(directory)
         with open(self.result_path, 'w') as result_txt:
             for r in self.result:
                 print(r, file=result_txt)
@@ -234,7 +244,8 @@ class MTMCT(object):
         for cdx, cam in enumerate(self.cams):
             # Read
             valid_cam[cam] = True
-            path, img, img_ori, _ = self.datasets[cam].__next__(cam, self.temp_align[cam][fdx])
+            temp_align_cam_fdx_ = self.temp_align[cam][fdx]
+            path, img, img_ori, _ = self.datasets[cam].__next__(cam, temp_align_cam_fdx_)
             # Check 这里检查是否有这样的图片存在文件夹中，如果没有则跳过然后到下一个摄像头中
             if img is None:
                 valid_cam[cam] = False
@@ -305,7 +316,8 @@ class MTMCT(object):
                             if online_tracks[info[0]].global_id not in online_global_ids[online_tracks[tdx].cam]:
                                 # Assign global id, Collect
                                 online_tracks[tdx].global_id = info[1]
-                                self.clusters_dict[info[1]].add_track(online_tracks[tdx])
+                                if info[1] in self.clusters_dict:
+                                    self.clusters_dict[info[1]].add_track(online_tracks[tdx])
                                 break
         # Get remaining current tracks
         remain_tracks = [track for track in online_tracks if track.global_id is None]
@@ -348,9 +360,10 @@ class MTMCT(object):
             # Filter with size, Since gt does not include small boxes
             if w * h / self.img_w / self.img_h < 0.003 or 0.3 < w * h / self.img_w / self.img_h:
                 continue
-            self.result.append(
-                '%d %d %d %d %d %d %d -1 -1' % (int(track.cam[-1]), track.global_id, self.temp_align[track.cam][fdx],
-                                                int(left), int(top), int(w), int(h)))
+            format = '%d %d %d %d %d %d %d -1 -1' % (
+                int(track.cam[-1]), track.global_id, self.temp_align[track.cam][fdx], int(left), int(top), int(w),
+                int(h))
+            self.result.append(format)
 
     def filter_tracks_by_overlap(self, online_tracks, p_dists):
         for i in range(len(online_tracks)):
@@ -423,7 +436,7 @@ class MTMCT(object):
         # Run Multi-target Single-Camera Tracking and online tracks
         online_tracks_raw = {}
         for cam in self.cams:
-            online_tracks_raw[cam] = self.trackers[cam].update(cam, detection[cam], feat[cam])
+            online_tracks_raw[cam] = self.trackers[cam].update(cam, detection[cam], feat[cam], self.temp_align)
         self.total_times['MTSC'] += time.time() - start
         return online_tracks_raw
 
@@ -566,8 +579,8 @@ class MTMCT(object):
                             continue
                         print(
                             '%d %d %d %d %d %d %d -1 -1' % (
-                            int(track.cam[-1]), track.global_id, self.temp_align[track.cam][info[0]],
-                            int(left), int(top), int(w), int(h)), file=output_file)
+                                int(track.cam[-1]), track.global_id, self.temp_align[track.cam][info[0]],
+                                int(left), int(top), int(w), int(h)), file=output_file)
 
 
 def caculate_tlwh(cxcywh):
@@ -582,8 +595,8 @@ def run():
     mtmct = MTMCT(opt)
     with torch.no_grad():
         mtmct.run_mtmct()
-    with open(outputs_mtmct_pkl, 'wb') as f:
-        pickle.dump(mtmct, f)
+    # with open(outputs_mtmct_pkl, 'wb') as f:
+    #     pickle.dump(mtmct, f)
     return mtmct
 
 
@@ -598,9 +611,19 @@ result_dir = 'results'
 
 
 def debug():
+    from tracking import matching
+    from scipy.spatial.distance import cdist
+
     mtmct = read_pkl_from_file(outputs_mtmct_pkl)
-    mtmct.debug_finished()
-    calculate_results('outputs/ground_truth_validation.txt', finished_txt)
+    # mtmct.debug_finished()
+    track14 = mtmct.trackers['c008'].finished[60]
+    reid14 = track14.obs_history[-1][3]
+    track94 = mtmct.trackers['c008'].finished[65]
+    reid94 = track94.obs_history[0][3]
+    reid_dis = cdist([reid14], [reid94], 'cosine')
+    reid_dis = reid_dis[0][0]
+    print(reid_dis)
+    # calculate_results('outputs/ground_truth_validation.txt', finished_txt)
 
 
 def main():
@@ -609,10 +632,41 @@ def main():
     calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
     return mtmct
 
+# 模型配置文件
+model_yaml_path = "./yolov10/ultralytics/cfg/models/v10/yolov10n.yaml"
+# 数据集配置文件
+data_yaml_path = './yolov10/datasets/multi_class/data.yaml'
+# 预训练模型
 
 if __name__ == '__main__':
-    opt.version = 3
-    mtmct_version = f'v{opt.version}'
-    outputs_mtmct_pkl = 'outputs/mtmct.pkl'
-    main()
-    # debug()
+    if opt.train:
+        pretrain_type = opt.pretrain_type
+        pre_model_name = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/yolov10/models/yolov10{pretrain_type}.pt'
+        # 加载预训练模型
+        # model = YOLOv10(model_yaml_path).load(pre_model_name)
+        model = YOLOv10(model_yaml_path)
+        pre_model_name_last = pre_model_name.split('/')[-1]
+        # 训练模型
+        epochs = opt.epoch
+        batch = opt.batch
+        # 生成一个六位的随机数
+        random_suffix = random.randint(100000, 999999)
+        save_path = f'UA-DETRAC_pre/model_name_{pre_model_name_last}/epochs_{epochs}/batch_{batch}/{random_suffix}'
+        results = model.train(data=data_yaml_path,
+                              epochs=epochs,
+                              batch=batch,
+                              name=f"{save_path}", device=opt.gpu)
+        outputs_mtmct_pkl = f'../../yolov10/runs/detect/{save_path}/mtmct.pkl'
+        mtmct_version = f'version/{save_path}/v1'
+        mtmct = MTMCT(opt,f'../../yolov10/runs/detect/{save_path}/weights/best.pt')
+        with torch.no_grad():
+            mtmct.run_mtmct()
+        with open(outputs_mtmct_pkl, 'wb') as f:
+            pickle.dump(mtmct, f)
+        calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
+    else:
+        opt.version = 6
+        mtmct_version = f'version/v{opt.version}'
+        outputs_mtmct_pkl = 'outputs/mtmct.pkl'
+        main()
+        # debug()

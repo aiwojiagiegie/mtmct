@@ -1,0 +1,1 @@
+nohup python MTMCT.py -train=True -batch=2 -epoch=400 -gpu=1 -pretrain_type=x > logx1.log &
