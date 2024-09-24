@@ -206,9 +206,13 @@ class MTMCT(object):
 
             # REID
             batch_feat, detection = self.reid(batch_img, batch_img_ori, preds)
-
+            # 根据cam id 拆分出需要的特性值
+            feat_count, feat = 0, {}
+            for cam in self.cams:
+                feat[cam] = batch_feat[feat_count:feat_count + len(detection[cam])]
+                feat_count += len(detection[cam])
             # 单摄像头跟踪
-            online_tracks_raw = self.MTSCT_online(batch_feat, detection)
+            online_tracks_raw = self.MTSCT_online(feat, detection)
 
             # 跨摄像头跟踪
             self.mtmct_online(fdx, online_tracks_raw)
@@ -422,16 +426,11 @@ class MTMCT(object):
                 online_tracks_filtered[cam] = class_agnostic_nms(online_tracks_filtered[cam])
         return online_tracks_filtered
 
-    def MTSCT_online(self, batch_feat, detection):
+    def MTSCT_online(self, feat, detection):
         """
         返回出四个跟踪器在更新新的帧之后，仍在跟踪的轨迹集合
         """
         start = time.time()
-        feat_count, feat = 0, {}
-        for cam in self.cams:
-            feat[cam] = batch_feat[feat_count:feat_count + len(detection[cam])]
-            feat_count += len(detection[cam])
-        # Run Multi-target Single-Camera Tracking and online tracks
         online_tracks_raw = {}
         for cam in self.cams:
             online_tracks_raw[cam] = self.trackers[cam].update(cam, detection[cam], feat[cam], self.temp_align)
