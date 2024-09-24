@@ -126,6 +126,8 @@ def prepare_align(cams, f_nums):
 
             elif cam == 'c009':
                 temp_align[cam][i] = i - 9
+            else:
+                temp_align[cam][i] = i
     return temp_align
 
 
@@ -174,7 +176,7 @@ class MTMCT(object):
             self.f_nums.append(self.datasets[cam].nf)
 
             # Prepare 2
-            self.roi_masks[cam] = cv2.imread('./preliminary/rois/%s.png' % cam, cv2.IMREAD_GRAYSCALE)
+            self.roi_masks[cam] = cv2.imread('/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real/%s/%s.png' % (cam,cam), cv2.IMREAD_GRAYSCALE)
             self.overlap_regions_cam2cam[cam] = {}
             for cam_ in self.cams:
                 self.overlap_regions_cam2cam[cam][cam_] = cv2.imread(
