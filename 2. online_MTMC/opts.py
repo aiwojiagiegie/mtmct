@@ -7,7 +7,7 @@ class Opts:
 
         # Options for detection
         self.parser.add_argument('--det_name', type=str, default='best')
-        self.parser.add_argument('--det_weights', type=str, default='./preliminary/det_weights/')
+        self.parser.add_argument('--det_weights', type=str, default='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/preliminary/det_weights/my/')
         self.parser.add_argument('--img_size', type=int, default=[720, 1280], help='inference size (pixels)')
         self.parser.add_argument('--classes', type=int, default=[2, 5, 7], help='filter by class')
         self.parser.add_argument('--conf_thres', type=float, default=0.1, help='object confidence threshold')
@@ -17,7 +17,7 @@ class Opts:
 
         # Options for feature extraction
         self.parser.add_argument('--feat_ext_name', type=str, default='resnet50_ibn_a')
-        self.parser.add_argument('--feat_ext_weights', type=str, default='./preliminary/feat_ext_weights/')
+        self.parser.add_argument('--feat_ext_weights', type=str, default='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/preliminary/feat_ext_weights/')
         self.parser.add_argument('--avg_type', type=str, default='gap')
         self.parser.add_argument('--patch_size', type=int, default=[384, 384], help='inference size (pixels)')
 
@@ -34,7 +34,7 @@ class Opts:
         self.parser.add_argument("--mtmc_match_thr", type=float, default=0.65)
 
         # Others
-        self.parser.add_argument('--data_dir', type=str, default='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/AIC19/validation/S02')
+        self.parser.add_argument('--data_dir', type=str, default='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real')
         self.parser.add_argument('--output_dir', type=str, default='./outputs/result/')
         self.parser.add_argument('--min_box_size', type=int, default=0.001, help='minimum box size')
         self.parser.add_argument('--img_ori_size', type=int, default=[1080, 1920], help='original image size (pixels)')
