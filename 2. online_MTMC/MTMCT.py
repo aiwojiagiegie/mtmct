@@ -145,7 +145,7 @@ class MTMCT(object):
             self.YOLOv10_detect_model = YOLOv10(YOLOv10_detect_model_path)
         # For time measurement
         self.total_times = {'Det': 0, 'Ext': 0, 'MTSC': 0, 'MTMC': 0}
-        self.cams = os.listdir(opt.data_dir)
+        self.cams = sorted(os.listdir(opt.data_dir))
         self.stride = 32
         # self.stride = int(self.det_model.stride.max())
         self.img_size = opt.img_size.copy()
@@ -205,12 +205,7 @@ class MTMCT(object):
             preds = self.detect(batch_img, valid_cam)
 
             # REID
-            batch_feat, detection = self.reid(batch_img, batch_img_ori, preds)
-            # 根据cam id 拆分出需要的特性值
-            feat_count, feat = 0, {}
-            for cam in self.cams:
-                feat[cam] = batch_feat[feat_count:feat_count + len(detection[cam])]
-                feat_count += len(detection[cam])
+            feat, detection = self.reid(batch_img, batch_img_ori, preds)
             # 单摄像头跟踪
             online_tracks_raw = self.MTSCT_online(feat, detection)
 
@@ -485,7 +480,14 @@ class MTMCT(object):
             batch_feat = self.feat_ext_model(batch_patch)
         batch_feat = batch_feat.squeeze().cpu().numpy()
         self.total_times['Ext'] += time.time() - self.start
-        return batch_feat, detection
+
+        # 根据cam id 拆分出需要的特性值
+        feat_count, feat = 0, {}
+        for cam in self.cams:
+            feat[cam] = batch_feat[feat_count:feat_count + len(detection[cam])]
+            feat_count += len(detection[cam])
+
+        return feat, detection
 
     def detect(self, batch_img, valid_cam):
         self.start = time.time()
