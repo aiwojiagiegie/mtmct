@@ -192,7 +192,8 @@ class LoadImages:  # for inference
 
         # Padded resize
         img = letterbox(img0, self.img_size, stride=self.stride)[0]
-
+        # img 为 复制一份img0
+        # img = img0.copy()
         # Convert
         img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
         img = np.ascontiguousarray(img)
@@ -985,35 +986,66 @@ def replicate(img, labels):
 
 
 def letterbox(img, new_shape=(640, 640), color=(114, 114, 114), auto=True, scaleFill=False, scaleup=True, stride=32):
-    # Resize and pad image while meeting stride-multiple constraints
-    shape = img.shape[:2]  # current shape [height, width]
+    """
+    将图像调整大小并填充，以满足步长多倍数的约束条件。
+    
+    参数:
+    img: 输入图像
+    new_shape: 目标形状 (高度, 宽度)
+    color: 填充颜色
+    auto: 是否自动计算填充
+    scaleFill: 是否通过拉伸图像来填充
+    scaleup: 是否允许放大图像
+    stride: 步长，用于确保输出尺寸是步长的倍数
+    
+    返回:
+    img: 调整大小和填充后的图像
+    ratio: 缩放比例 (宽度比例, 高度比例)
+    (dw, dh): 填充量 (宽度填充, 高度填充)
+    """
+    
+    # 获取当前图像形状 [高度, 宽度]
+    shape = img.shape[:2]
+    
+    # 确保 new_shape 是元组形式
     if isinstance(new_shape, int):
         new_shape = (new_shape, new_shape)
 
-    # Scale ratio (new / old)
+    # 计算缩放比例 (新 / 旧)
     r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
-    if not scaleup:  # only scale down, do not scale up (for better test mAP)
+    
+    # 如果不允许放大，则将比例限制为不大于1
+    if not scaleup:
         r = min(r, 1.0)
 
-    # Compute padding
-    ratio = r, r  # width, height ratios
-    new_unpad = int(round(shape[1] * r)), int(round(shape[0] * r))
-    dw, dh = new_shape[1] - new_unpad[0], new_shape[0] - new_unpad[1]  # wh padding
-    if auto:  # minimum rectangle
-        dw, dh = np.mod(dw, stride), np.mod(dh, stride)  # wh padding
-    elif scaleFill:  # stretch
+    # 计算缩放后的尺寸和填充
+    ratio = r, r  # 宽度和高度的缩放比例
+    new_unpad = int(round(shape[1] * r)), int(round(shape[0] * r))  # 缩放后的宽度和高度
+    dw, dh = new_shape[1] - new_unpad[0], new_shape[0] - new_unpad[1]  # 需要填充的宽度和高度
+    
+    if auto:  # 最小矩形
+        # 确保填充后的尺寸是步长的倍数
+        dw, dh = np.mod(dw, stride), np.mod(dh, stride)
+    elif scaleFill:  # 拉伸填充
         dw, dh = 0.0, 0.0
         new_unpad = (new_shape[1], new_shape[0])
-        ratio = new_shape[1] / shape[1], new_shape[0] / shape[0]  # width, height ratios
+        ratio = new_shape[1] / shape[1], new_shape[0] / shape[0]  # 宽度和高度的比例
 
-    dw /= 2  # divide padding into 2 sides
+    # 将填充分配到两侧
+    dw /= 2
     dh /= 2
 
-    if shape[::-1] != new_unpad:  # resize
+    # 如果需要调整大小
+    if shape[::-1] != new_unpad:
         img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
+    
+    # 计算上下左右填充的像素数
     top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
     left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
-    img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)  # add border
+    
+    # 添加边框填充
+    img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)
+    
     return img, ratio, (dw, dh)
 
 

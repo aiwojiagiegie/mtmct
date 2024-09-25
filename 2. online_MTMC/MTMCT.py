@@ -180,7 +180,7 @@ class MTMCT(object):
             self.overlap_regions_cam2cam[cam] = {}
             for cam_ in self.cams:
                 self.overlap_regions_cam2cam[cam][cam_] = cv2.imread(
-                    './preliminary/overlap_zones/%s_%s.png' % (cam, cam_),
+                    './preliminary/overlap_zones/HST/%s_%s.png' % (cam, cam_),
                     cv2.IMREAD_GRAYSCALE) if cam_ != cam else None
         self.temp_align = prepare_align(self.cams, self.f_nums)
         for tracker in self.trackers.values():
@@ -199,20 +199,41 @@ class MTMCT(object):
 
     def run_mtmct(self):
         # Run
-        for fdx in tqdm(range(0, np.max(self.f_nums) + 1)):
-            # 准备图像数据
-            batch_img, batch_img_ori, valid_cam = self.generate_image_info(fdx)
-
-            # 目标检测
-            preds = self.detect(batch_img, valid_cam)
-
-            # REID
-            feat, detection = self.reid(batch_img, batch_img_ori, preds)
-            # 单摄像头跟踪
-            online_tracks_raw = self.MTSCT_online(feat, detection)
-
-            # 跨摄像头跟踪
-            self.mtmct_online(fdx, online_tracks_raw)
+        # for fdx in tqdm(range(0, np.max(self.f_nums) + 1)):
+        #     # 准备图像数据
+        #     batch_img, batch_img_ori, valid_cam = self.generate_image_info(fdx)
+        #
+        #     # 目标检测
+        #     preds = self.detect(batch_img, valid_cam)
+        #
+        #     # REID
+        #     feat, detection = self.reid(batch_img, batch_img_ori, preds)
+        #     # detection是dict value均为ndarray类型 shape=(x,5) x对应检测到的车辆的数量 5分别是bbox，置信度
+        #     # feat是dict value均为ndarray类型 shape=(x,2048) 2048是向量
+        #     # 单摄像头跟踪
+        #     online_tracks_raw = self.MTSCT_online(feat, detection)
+        #     # detection是一个dict，key是摄像头，value是检测结果，是一个list，每个元素是一个五维数组，分别是 左上角xy和长宽 置信度
+        #     # 根据detection把bbox绘制到图片中
+        #     # base_path='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real'
+        #     # for det in detection:
+        #     #     # img_path 最后的路径类似于'det_f00001.jpg','det_f00002.jpg','det_f00003.jpg'
+        #     #     img_path = os.path.join(base_path, det, 'frame', f'{det}_f{fdx+1:04d}.jpg')
+        #     #     save_path = os.path.join(base_path, det, 'MTMCT中对图片进行debug', f'{det}_f{fdx+1:04d}.jpg')
+        #     #     # 判断save路径的父目录存不存在
+        #     #     if not os.path.exists(os.path.dirname(save_path)):
+        #     #         os.makedirs(os.path.dirname(save_path))
+        #     #     img = cv2.imread(img_path)
+        #     #     for box in detection[det]:
+        #     #         # 左上角xy和长宽 置信度
+        #     #         left, top, width, height, conf = box
+        #     #         left, top, width, height = map(int, [left, top, width, height])
+        #     #         # 绘制边界框
+        #     #         cv2.rectangle(img, (left, top), (left + width, top + height), (0, 255, 0), 2)
+        #     #         # 添加标签
+        #     #         cv2.putText(img, f'{conf:.2f}', (left, top - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        #     #     cv2.imwrite(save_path, img)
+        #     # 跨摄像头跟踪
+        #     self.mtmct_online(fdx, online_tracks_raw)
         directory = os.path.dirname(self.result_path)
         if not os.path.exists(directory):
             os.makedirs(directory)
@@ -235,9 +256,9 @@ class MTMCT(object):
         准备图像数据
         """
         # Generate empty batches
-        batch_img = torch.zeros((len(self.cams), 3, self.img_size[0], self.img_size[1]), device='cuda').half()
+        batch_img = torch.zeros((len(self.cams), 3, self.img_size[0], self.img_size[1]), device='cuda')
         batch_img_ori = torch.zeros((len(self.cams), 3, opt.img_ori_size[0], opt.img_ori_size[1]),
-                                    device='cuda').half()
+                                    device='cuda')
         # 准备图像数据
         valid_cam = {}
         for cdx, cam in enumerate(self.cams):
@@ -251,10 +272,11 @@ class MTMCT(object):
                 continue
 
             # Store 把读取到的图片存到batch_img中并且序列化
-            batch_img[cdx] = torch.tensor(img / 255.0, device='cuda').half()
-            batch_img_ori[cdx] = torch.tensor(img_ori.transpose((2, 0, 1)) / 255.0, device='cuda').half()
+            batch_img[cdx] = torch.tensor(img / 255.0, device='cuda')
+            batch_img_ori[cdx] = torch.tensor(img_ori.transpose((2, 0, 1)) / 255.0, device='cuda')
         return batch_img, batch_img_ori, valid_cam
-
+    def new_mtmct_online(self, fdx, online_tracks_raw):
+        pass
     def mtmct_online(self, fdx, online_tracks_raw):
         start = time.time()
         online_tracks_filtered = self.filter_online_tracks(online_tracks_raw)
@@ -263,12 +285,14 @@ class MTMCT(object):
         for cam in self.cams:
             online_tracks += online_tracks_filtered[cam]
         # Gather current tracking global ids
-        online_global_ids = {'c006': [], 'c007': [], 'c008': [], 'c009': []}
+        online_global_ids = {'41': [], '42': [], '43': [], '44': [], '45': [], '46': []}
         for track in online_tracks:
             if track.global_id is not None:
                 online_global_ids[track.cam].append(track.global_id)
         # 获取feat数据并计算特征距离
         online_feats = np.array([track.get_feature(mode=opt.get_feat_mode) for track in online_tracks])
+        if len(online_feats) < 2 :
+            return
         p_dists = pdist(online_feats, metric='cosine')
         p_dists = np.clip(p_dists, 0, 1)  # 归一化
         # Apply constraints
@@ -360,7 +384,7 @@ class MTMCT(object):
             if w * h / self.img_w / self.img_h < 0.003 or 0.3 < w * h / self.img_w / self.img_h:
                 continue
             format = '%d %d %d %d %d %d %d -1 -1' % (
-                int(track.cam[-1]), track.global_id, self.temp_align[track.cam][fdx], int(left), int(top), int(w),
+                int(track.cam[-2:]), track.global_id, self.temp_align[track.cam][fdx], int(left), int(top), int(w),
                 int(h))
             self.result.append(format)
 
@@ -476,6 +500,11 @@ class MTMCT(object):
                     # 如果是c008则水平翻转
                     batch_patch[det_count] = torch.fliplr(patch) if self.cams[pdx] == 'c008' else patch
                     det_count += 1
+        if det_count == 0:
+            feat = {}
+            for cam in self.cams:
+                feat[cam] = np.zeros((0, 2048))
+            return feat , detection
         # Extract features
         with torch.autocast('cuda'):
             batch_patch = batch_patch[:det_count]
@@ -657,7 +686,7 @@ if __name__ == '__main__':
         calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
     else:
         opt.version = 6
-        mtmct_version = f'version/v{opt.version}'
+        mtmct_version = f'output_HST/result/version/v{opt.version}'
         outputs_mtmct_pkl = 'outputs/mtmct.pkl'
         main()
         # debug()
