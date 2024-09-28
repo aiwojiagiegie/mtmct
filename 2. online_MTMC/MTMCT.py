@@ -146,7 +146,7 @@ class MTMCT(object):
             self.YOLOv10_detect_model = YOLOv10(YOLOv10_detect_model_path)
         # For time measurement
         self.total_times = {'Det': 0, 'Ext': 0, 'MTSC': 0, 'MTMC': 0}
-        self.cams = os.listdir(opt.data_dir)
+        self.cams = sorted(os.listdir(opt.data_dir))
         self.stride = 32
         # self.stride = int(self.det_model.stride.max())
         self.img_size = opt.img_size.copy()
@@ -207,10 +207,9 @@ class MTMCT(object):
             preds = self.detect(batch_img, valid_cam)
 
             # REID
-            batch_feat, detection = self.reid(batch_img, batch_img_ori, preds)
-
+            feat, detection = self.reid(batch_img, batch_img_ori, preds)
             # 单摄像头跟踪
-            online_tracks_raw = self.MTSCT_online(batch_feat, detection)
+            online_tracks_raw = self.MTSCT_online(feat, detection)
 
             # 跨摄像头跟踪
             self.mtmct_online(fdx, online_tracks_raw)
@@ -424,16 +423,11 @@ class MTMCT(object):
                 online_tracks_filtered[cam] = class_agnostic_nms(online_tracks_filtered[cam])
         return online_tracks_filtered
 
-    def MTSCT_online(self, batch_feat, detection):
+    def MTSCT_online(self, feat, detection):
         """
         返回出四个跟踪器在更新新的帧之后，仍在跟踪的轨迹集合
         """
         start = time.time()
-        feat_count, feat = 0, {}
-        for cam in self.cams:
-            feat[cam] = batch_feat[feat_count:feat_count + len(detection[cam])]
-            feat_count += len(detection[cam])
-        # Run Multi-target Single-Camera Tracking and online tracks
         online_tracks_raw = {}
         for cam in self.cams:
             online_tracks_raw[cam] = self.trackers[cam].update(cam, detection[cam], feat[cam], self.temp_align)
@@ -501,7 +495,14 @@ class MTMCT(object):
         new_batch_feat = (new_batch_feat - means) / stds
         sigmoid_arr = np.apply_along_axis(sigmoid, 1, new_batch_feat)
         self.total_times['Ext'] += time.time() - self.start
-        return sigmoid_arr, detection
+
+        # 根据cam id 拆分出需要的特性值
+        feat_count, feat = 0, {}
+        for cam in self.cams:
+            feat[cam] = new_batch_feat[feat_count:feat_count + len(detection[cam])]
+            feat_count += len(detection[cam])
+
+        return feat, detection
 
     def detect(self, batch_img, valid_cam):
         self.start = time.time()

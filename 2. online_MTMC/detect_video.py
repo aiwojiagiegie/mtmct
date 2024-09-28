@@ -39,7 +39,11 @@ def read_video_frames(video_path,output_path):
         boxes = result.boxes.data.tolist()
         for obj in boxes:
             left, top, right, bottom = int(obj[0]), int(obj[1]), int(obj[2]), int(obj[3])
-            cv2.rectangle(frame, (left, top), (right, bottom), (0,0,0), 2)
+            # 将检测到的目标框绘制在图像上
+            cv2.rectangle(frame, (left, top), (right, bottom), (255,255,255), 2)
+            # 在图像上绘制目标的类别和置信度
+            label = f"{names[int(obj[5])]}: {obj[4]:.2f}"
+            cv2.putText(frame, label, (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 2)
         out.write(frame)
         # 处理帧
         progress_bar.update(1)
