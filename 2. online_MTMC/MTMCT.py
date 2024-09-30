@@ -479,6 +479,9 @@ class MTMCT(object):
             batch_patch = batch_patch[:det_count]
             batch_feat = self.feat_ext_model(batch_patch)
         batch_feat = batch_feat.squeeze().cpu().numpy()
+        # 当batch_feat为一维的时候，给它改成二维
+        if batch_feat.ndim == 1:
+            batch_feat = batch_feat[np.newaxis, :]
         self.total_times['Ext'] += time.time() - self.start
 
         # 根据cam id 拆分出需要的特性值
