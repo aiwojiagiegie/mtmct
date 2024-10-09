@@ -30,12 +30,12 @@ class Opts:
 
         # Options for MTMC
         self.parser.add_argument('--get_feat_mode', type=str, default='best')
-        self.parser.add_argument("--max_time_differ", type=int, default=30)
+        self.parser.add_argument("--max_time_differ", type=int, default=60)
         self.parser.add_argument("--mtmc_match_thr", type=float, default=0.65)
 
         # Others
         self.parser.add_argument('--data_dir', type=str, default='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real')
-        self.parser.add_argument('--output_dir', type=str, default='./outputs/result/')
+        self.parser.add_argument('--output_dir', type=str, default='./output_HST/result/')
         self.parser.add_argument('--min_box_size', type=int, default=0.001, help='minimum box size')
         self.parser.add_argument('--img_ori_size', type=int, default=[1080, 1920], help='original image size (pixels)')
         self.parser.add_argument('--version', type=int, default=1, help='original image size (pixels)')

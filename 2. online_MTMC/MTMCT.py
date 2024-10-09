@@ -199,41 +199,41 @@ class MTMCT(object):
 
     def run_mtmct(self):
         # Run
-        # for fdx in tqdm(range(0, np.max(self.f_nums) + 1)):
-        #     # 准备图像数据
-        #     batch_img, batch_img_ori, valid_cam = self.generate_image_info(fdx)
-        #
-        #     # 目标检测
-        #     preds = self.detect(batch_img, valid_cam)
-        #
-        #     # REID
-        #     feat, detection = self.reid(batch_img, batch_img_ori, preds)
-        #     # detection是dict value均为ndarray类型 shape=(x,5) x对应检测到的车辆的数量 5分别是bbox，置信度
-        #     # feat是dict value均为ndarray类型 shape=(x,2048) 2048是向量
-        #     # 单摄像头跟踪
-        #     online_tracks_raw = self.MTSCT_online(feat, detection)
-        #     # detection是一个dict，key是摄像头，value是检测结果，是一个list，每个元素是一个五维数组，分别是 左上角xy和长宽 置信度
-        #     # 根据detection把bbox绘制到图片中
-        #     # base_path='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real'
-        #     # for det in detection:
-        #     #     # img_path 最后的路径类似于'det_f00001.jpg','det_f00002.jpg','det_f00003.jpg'
-        #     #     img_path = os.path.join(base_path, det, 'frame', f'{det}_f{fdx+1:04d}.jpg')
-        #     #     save_path = os.path.join(base_path, det, 'MTMCT中对图片进行debug', f'{det}_f{fdx+1:04d}.jpg')
-        #     #     # 判断save路径的父目录存不存在
-        #     #     if not os.path.exists(os.path.dirname(save_path)):
-        #     #         os.makedirs(os.path.dirname(save_path))
-        #     #     img = cv2.imread(img_path)
-        #     #     for box in detection[det]:
-        #     #         # 左上角xy和长宽 置信度
-        #     #         left, top, width, height, conf = box
-        #     #         left, top, width, height = map(int, [left, top, width, height])
-        #     #         # 绘制边界框
-        #     #         cv2.rectangle(img, (left, top), (left + width, top + height), (0, 255, 0), 2)
-        #     #         # 添加标签
-        #     #         cv2.putText(img, f'{conf:.2f}', (left, top - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-        #     #     cv2.imwrite(save_path, img)
-        #     # 跨摄像头跟踪
-        #     self.mtmct_online(fdx, online_tracks_raw)
+        for fdx in tqdm(range(0, np.max(self.f_nums) + 1)):
+            # 准备图像数据
+            batch_img, batch_img_ori, valid_cam = self.generate_image_info(fdx)
+
+            # 目标检测
+            preds = self.detect(batch_img, valid_cam)
+
+            # REID
+            feat, detection = self.reid(batch_img, batch_img_ori, preds)
+            # detection是dict value均为ndarray类型 shape=(x,5) x对应检测到的车辆的数量 5分别是bbox，置信度
+            # feat是dict value均为ndarray类型 shape=(x,2048) 2048是向量
+            # 单摄像头跟踪
+            online_tracks_raw = self.MTSCT_online(feat, detection)
+            # detection是一个dict，key是摄像头，value是检测结果，是一个list，每个元素是一个五维数组，分别是 左上角xy和长宽 置信度
+            # 根据detection把bbox绘制到图片中
+            # base_path='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real'
+            # for det in detection:
+            #     # img_path 最后的路径类似于'det_f00001.jpg','det_f00002.jpg','det_f00003.jpg'
+            #     img_path = os.path.join(base_path, det, 'frame', f'{det}_f{fdx+1:04d}.jpg')
+            #     save_path = os.path.join(base_path, det, 'MTMCT中对图片进行debug', f'{det}_f{fdx+1:04d}.jpg')
+            #     # 判断save路径的父目录存不存在
+            #     if not os.path.exists(os.path.dirname(save_path)):
+            #         os.makedirs(os.path.dirname(save_path))
+            #     img = cv2.imread(img_path)
+            #     for box in detection[det]:
+            #         # 左上角xy和长宽 置信度
+            #         left, top, width, height, conf = box
+            #         left, top, width, height = map(int, [left, top, width, height])
+            #         # 绘制边界框
+            #         cv2.rectangle(img, (left, top), (left + width, top + height), (0, 255, 0), 2)
+            #         # 添加标签
+            #         cv2.putText(img, f'{conf:.2f}', (left, top - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            #     cv2.imwrite(save_path, img)
+            # 跨摄像头跟踪
+            self.mtmct_online(fdx, online_tracks_raw)
         directory = os.path.dirname(self.result_path)
         if not os.path.exists(directory):
             os.makedirs(directory)
@@ -686,7 +686,7 @@ if __name__ == '__main__':
         calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
     else:
         opt.version = 6
-        mtmct_version = f'output_HST/result/version/v{opt.version}'
+        mtmct_version = f'version/v{opt.version}'
         outputs_mtmct_pkl = 'outputs/mtmct.pkl'
         main()
         # debug()
