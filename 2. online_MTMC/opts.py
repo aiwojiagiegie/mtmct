@@ -30,7 +30,7 @@ class Opts:
 
         # Options for MTMC
         self.parser.add_argument('--get_feat_mode', type=str, default='best')
-        self.parser.add_argument("--max_time_differ", type=int, default=60)
+        self.parser.add_argument("--max_time_differ", type=int, default=2500)
         self.parser.add_argument("--mtmc_match_thr", type=float, default=0.65)
 
         # Others
@@ -43,7 +43,7 @@ class Opts:
         self.parser.add_argument("-epoch", help="训练轮次", dest="epoch", type=int, default="300")
         self.parser.add_argument("-batch", help="训练batch", dest="batch", type=int, default="2")
         self.parser.add_argument("-gpu", help="训练用的卡id", dest="gpu", type=int, default="0")
-        self.parser.add_argument("-yolo10_model", help="yolo模型权重", dest="yolo10_model", type=str, default="/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/preliminary/det_weights/my/best_multiple3.pt")
+        self.parser.add_argument("-yolo10_model", help="yolo模型权重", dest="yolo10_model", type=str, default=" /home/chatmindai/project/zhangkun/yolov10/runs/detect/UA-DETRAC_pre/model_name_best_multiple3.pt/epochs_200/batch_32/weights/best.pt")
         self.parser.add_argument("-pretrain_type", help="yolo预训练模型类型", dest="pretrain_type", type=str, default="s")
 
     def parse(self):

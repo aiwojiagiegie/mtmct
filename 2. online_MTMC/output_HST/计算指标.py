@@ -455,7 +455,6 @@ info = {
     "num_ascend": "目标在场景中升级或升高的次数。",
     "num_migrate": "目标从一个区域迁移到另一个区域的次数。"
 }
-baseline = {'idf1': 0.7825229312555478, 'idp': 0.8095918367346939, 'idr': 0.7572055735827448, 'recall': 0.8324107654132468, 'precision': 0.89, 'num_unique_objects': 145, 'mostly_tracked': 105, 'partially_tracked': 35, 'mostly_lost': 5, 'num_false_positives': 2156, 'num_misses': 3512, 'num_switches': 43, 'num_fragmentations': 240, 'mota': 0.7274766176751288, 'motp': 0.2514508515359548, 'num_transfer': 46, 'num_ascend': 10, 'num_migrate': 18, 'num_frames': 7494, 'idfp': 3732.0, 'idfn': 5088.0, 'idtp': 15868.0}
 
 def calculate_results(test_path, pred_path, mread=False, dstype='validation', roidir='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real'):
     test = readData(test_path)
@@ -475,23 +474,21 @@ def calculate_results(test_path, pred_path, mread=False, dstype='validation', ro
 
 def my_print_result(summary):
     dict_list = summary.to_dict(orient='records')
-    format_str = "{:<20} {:<15} {:<12} {:10} {:4} {}"
-    float_format = "{:<20} {:<15.6%} {:<12.6%} {:10.6%} {:4} {}"
-    print(format_str.format("指标", "baseline", "当前结果", "差值", "好坏", "指标解释"))
+    format_str = "{:<20} {:<12} {}"
+    float_format = "{:<20} {:<12.6%} {}"
+    print(format_str.format("指标", "当前结果", "指标解释"))
     for record in dict_list:
         for key, value in record.items():
             # 计算差值和符号
-            difference = value - baseline[key]
-            symbol = "↑" if difference > 0 else "↓" if difference < 0 else ""
             if isinstance(value, float) :
                 if value.is_integer():
-                    print(format_str.format(key, int(baseline[key]), int(value),difference,symbol, info[key]))
+                    print(format_str.format(key,  int(value), info[key]))
                 else:
-                    print(float_format.format(key, baseline[key], value,difference,symbol,  info[key]))
+                    print(float_format.format(key, value,  info[key]))
             else:
-                print(format_str.format(key, baseline[key], value, difference,symbol, info[key]))
+                print(format_str.format(key, value,  info[key]))
 if __name__ == '__main__':
-    detection_path = f'../output_HST/result/version/v1.txt'
+    detection_path = f'./result/version/v6.txt'
     gt_path = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/test_gt.txt'
     # calculate_results('ground_truth_validation.txt', f'ground_truth_validation.txt')
     calculate_results(gt_path, detection_path)

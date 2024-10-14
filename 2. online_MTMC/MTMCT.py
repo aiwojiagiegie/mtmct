@@ -649,7 +649,7 @@ def debug():
 def main():
     mtmct = run()
     # mtmct = read_pkl_from_file(outputs_mtmct_pkl)
-    calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
+    calculate_results('output_HST/test_gt.txt', mtmct.result_path)
     return mtmct
 
 # 模型配置文件
@@ -685,7 +685,7 @@ if __name__ == '__main__':
             pickle.dump(mtmct, f)
         calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
     else:
-        opt.version = 6
+        opt.version = 3
         mtmct_version = f'version/v{opt.version}'
         outputs_mtmct_pkl = 'outputs/mtmct.pkl'
         main()
