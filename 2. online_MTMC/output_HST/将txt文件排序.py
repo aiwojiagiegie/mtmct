@@ -30,12 +30,13 @@ def writeDataToTXT(df, filepath, delimiter='\t'):
         file.write('\n')
 
 if __name__ == '__main__':
-    detection_path = 'result/version/v1.txt'
+    detection_path = 'result/version/v2.txt'
     pred_data = getData(detection_path)
-    pred_data.sort_values(by=['Id', 'CameraId', 'FrameId'], inplace=True)
+    sort_by = ['CameraId', 'FrameId' , 'Id']
+    pred_data.sort_values(by=sort_by, inplace=True)
     writeDataToTXT(df=pred_data, filepath='debug_sort/results.txt')
 
     gt_path = 'test_gt.txt'
     gt_data = getData(gt_path)
-    gt_data.sort_values(by=['Id', 'CameraId', 'FrameId'], inplace=True)
+    gt_data.sort_values(by=sort_by, inplace=True)
     writeDataToTXT(df=gt_data, filepath='debug_sort/gt.txt')

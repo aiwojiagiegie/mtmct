@@ -377,12 +377,12 @@ class MTMCT(object):
 
             # Expand box, Since gt boxes are not tightly annotated around objects and quite larger than objects
             cx, cy = left + w / 2, top + h / 2
-            w, h = w * 1.45, h * 1.45
+            # w, h = w * 1.45, h * 1.45
             left, top = cx - w / 2, cy - h / 2
 
             # Filter with size, Since gt does not include small boxes
-            if w * h / self.img_w / self.img_h < 0.003 or 0.3 < w * h / self.img_w / self.img_h:
-                continue
+            # if w * h / self.img_w / self.img_h < 0.003 or 0.3 < w * h / self.img_w / self.img_h:
+            #     continue
             format = '%d %d %d %d %d %d %d -1 -1' % (
                 int(track.cam[-2:]), track.global_id, self.temp_align[track.cam][fdx], int(left), int(top), int(w),
                 int(h))

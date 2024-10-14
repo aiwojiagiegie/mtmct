@@ -32,36 +32,29 @@ def my_print_result(summary,camera_id):
                 print(format_str.format(key,  value,  info[key]),file=f)
 
 
-def calculate_results(test, pred,cam_id, mread=False, dstype='validation',
-                      roidir='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real'):
-    try:
-        summary = eval(test, pred, mread=mread, dstype=dstype, roidir=roidir)
-        # print(summary.to_dict(orient='records'))
-        my_print_result(summary,cam_id)
-    except Exception as e:
-        if mread:
-            print('{"error": "%s"}' % repr(e))
-        else:
-            print("Error: %s" % repr(e))
-        traceback.print_exc()
+def write_results(gt, pred, cam_id, mread=False, dstype='validation'):
+    # 将文件写入到 ./debug_单摄像头分析/cam_id_test.txt中
+    # 取消对头的输出
+    gt.to_csv(f'./debug_单摄像头分析/{cam_id}_gt.txt', index=False, header=False)
+    pred.to_csv(f'./debug_单摄像头分析/{cam_id}_pred.txt', index=False, header=False)
 
 
 if __name__ == '__main__':
     version = 'v3'
     pred_path = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/result/version/{version}.txt'
-    test_path = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/test_gt.txt'
+    gt_path = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/test_gt.txt'
 
-    test = readData(test_path)
-    unique_camera_ids = test['CameraId'].unique()
+    gt = readData(gt_path)
+    unique_camera_ids = gt['CameraId'].unique()
     test_grouped_dataframes = {}
     for camera_id in unique_camera_ids:
-        test_grouped_dataframes[camera_id] = test[test['CameraId'] == camera_id]
+        test_grouped_dataframes[camera_id] = gt[gt['CameraId'] == camera_id]
 
     pred = readData(pred_path)
     unique_camera_ids = pred['CameraId'].unique()
     pred_grouped_dataframes = {}
     for camera_id in unique_camera_ids:
         pred_grouped_dataframes[camera_id] = pred[pred['CameraId'] == camera_id]
-    with open('单摄像头跟踪结果分析.txt', 'w') as f:
-        for camera_id in unique_camera_ids:
-            calculate_results(test_grouped_dataframes[camera_id], pred_grouped_dataframes[camera_id],camera_id)
+
+    for camera_id in unique_camera_ids:
+        write_results(test_grouped_dataframes[camera_id], pred_grouped_dataframes[camera_id],camera_id)

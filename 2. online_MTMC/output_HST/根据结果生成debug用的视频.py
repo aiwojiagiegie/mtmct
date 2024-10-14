@@ -311,8 +311,9 @@ def generate_depart():
                     f'debug/gt/c00{camera_id}.mp4', car_bbox_colors)
     target_info, car_bbox_colors = get_bbox_data(detection_path)
     for camera_id, frame_bboxes in target_info.items():
-        draw_bboxes(f'../../dataset/AIC19/validation/S02/c00{camera_id}/vdo.avi', frame_bboxes,
-                    f'debug/{version}/target/c00{camera_id}.mp4', car_bbox_colors)
+        draw_bboxes(f'../../dataset/HST/real/{camera_id}/{camera_id}.mp4',
+                    frame_bboxes,
+                    f'debug/{version}/target/{camera_id}.mp4', car_bbox_colors)
 
 
 def generate_all_in():
@@ -326,9 +327,10 @@ def generate_all_in():
     for camera_id, frame_bboxes in target_info.items():
         all_in_bbox_info[camera_id]['pred'] = frame_bboxes
     for camera_id, frame_bboxes in all_in_bbox_info.items():
-        draw_bboxes_all_in(f'../../dataset/AIC19/validation/S02/c00{camera_id}/vdo.avi', frame_bboxes['gt'],
+        draw_bboxes_all_in(f'../../dataset/HST/real/{camera_id}/{camera_id}.mp4',
+                           frame_bboxes['gt'],
                            frame_bboxes['pred'],
-                           f'debug/{version}/allIn/c00{camera_id}.mp4', gt_bbox_colors, pred_bbox_colors)
+                           f'debug/{version}/allIn/{camera_id}.mp4', gt_bbox_colors, pred_bbox_colors)
 
 
 def generate_remove_duplicate():
@@ -342,37 +344,37 @@ def generate_remove_duplicate():
     for camera_id, frame_bboxes in target_info.items():
         all_in_bbox_info[camera_id]['pred'] = frame_bboxes
     for camera_id, frame_bboxes in all_in_bbox_info.items():
-        draw_bboxes_remove_duplicate(f'../../dataset/AIC19/validation/S02/c00{camera_id}/vdo.avi',
+        draw_bboxes_remove_duplicate(f'../../dataset/HST/real/{camera_id}/{camera_id}.mp4',
                                      frame_bboxes['gt'],
                                      frame_bboxes['pred'],
-                                     f'debug/{version}/remove_duplicate/c00{camera_id}.mp4', gt_bbox_colors, pred_bbox_colors)
+                                     f'debug/{version}/remove_duplicate/{camera_id}.mp4', gt_bbox_colors, pred_bbox_colors)
 
 
 if __name__ == '__main__':
-    version = 'v1'
-    detection_path = f'result/{version}.txt'
+    version = 'v3'
+    detection_path = f'result/version/{version}.txt'
     gt_path = 'test_gt.txt'
-    # generate_all_in()
-    # generate_depart()
-    # generate_remove_duplicate()
-    bbox_info, gt_bbox_colors = get_bbox_data(gt_path)
-    all_in_bbox_info = {}
-    for camera_id, frame_bboxes in bbox_info.items():
-        if camera_id not in all_in_bbox_info:
-            all_in_bbox_info[camera_id] = {}
-        all_in_bbox_info[camera_id]['gt'] = frame_bboxes
-
-    # 定义一个函数来处理单个camera_id的任务
-    def process_camera(camera_id, all_info):
-        frame_bboxes = all_info[camera_id]
-        draw_bboxes_single_in(f'../../dataset/HST/pred/{camera_id}.mp4', frame_bboxes['gt'],
-                              f'debug/{version}/single/{camera_id}.mp4', gt_bbox_colors)
-
-    # 创建线程池
-    with ThreadPoolExecutor(max_workers=6) as executor:
-        # 提交任务给线程池
-        futures = {executor.submit(process_camera, camera_id, all_in_bbox_info): camera_id for camera_id in
-                   all_in_bbox_info}
+    generate_all_in()
+    generate_depart()
+    generate_remove_duplicate()
+    # bbox_info, gt_bbox_colors = get_bbox_data(gt_path)
+    # all_in_bbox_info = {}
+    # for camera_id, frame_bboxes in bbox_info.items():
+    #     if camera_id not in all_in_bbox_info:
+    #         all_in_bbox_info[camera_id] = {}
+    #     all_in_bbox_info[camera_id]['gt'] = frame_bboxes
+    #
+    # # 定义一个函数来处理单个camera_id的任务
+    # def process_camera(camera_id, all_info):
+    #     frame_bboxes = all_info[camera_id]
+    #     draw_bboxes_single_in(f'../../dataset/HST/pred/{camera_id}.mp4', frame_bboxes['gt'],
+    #                           f'debug/{version}/single/{camera_id}.mp4', gt_bbox_colors)
+    #
+    # # 创建线程池
+    # with ThreadPoolExecutor(max_workers=6) as executor:
+    #     # 提交任务给线程池
+    #     futures = {executor.submit(process_camera, camera_id, all_in_bbox_info): camera_id for camera_id in
+    #                all_in_bbox_info}
 
     # for camera_id, frame_bboxes in all_in_bbox_info.items():
     #     draw_bboxes_single_in(f'../../dataset/qianhuang/{camera_id}.mp4', frame_bboxes['gt'],

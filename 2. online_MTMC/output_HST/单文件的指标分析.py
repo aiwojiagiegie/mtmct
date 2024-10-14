@@ -415,7 +415,7 @@ def eval(test, pred, **kwargs):
     # 根据ROI进行过滤
     pred = removeOutliersROI(pred, dstype=dstype, roidir=roidir)
     # 过滤掉只出现在一个摄像头中的车辆
-    pred = removeOutliersSingleCam(pred)
+    # pred = removeOutliersSingleCam(pred)
     # 过滤掉重复出现的数据 根据'CameraId', 'Id', 'FrameId'判断是否重复
     pred = removeRepetition(pred)
 
