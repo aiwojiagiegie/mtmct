@@ -40,7 +40,7 @@ def detect_and_draw(image_path, output_path, model_path):
 
 if __name__ == "__main__":
     model_path = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/preliminary/det_weights/my/best_multiple3.pt'
-    image_path = "/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real/43/frame/43_f0011.jpg"
+    image_path = "/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real/43/frame/43_f0065.jpg"
     output_path = "./image_detected.jpg"
     
     detect_and_draw(image_path, output_path, model_path)

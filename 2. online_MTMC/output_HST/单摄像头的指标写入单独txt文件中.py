@@ -35,6 +35,9 @@ def my_print_result(summary,camera_id):
 def write_results(gt, pred, cam_id, mread=False, dstype='validation'):
     # 将文件写入到 ./debug_单摄像头分析/cam_id_test.txt中
     # 取消对头的输出
+    sort_by = ['Id', 'FrameId' ]
+    gt.sort_values(by=sort_by, inplace=True)
+    pred.sort_values(by=sort_by, inplace=True)
     gt.to_csv(f'./debug_单摄像头分析/{cam_id}_gt.txt', index=False, header=False)
     pred.to_csv(f'./debug_单摄像头分析/{cam_id}_pred.txt', index=False, header=False)
 

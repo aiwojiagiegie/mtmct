@@ -1,10 +1,13 @@
 import os
+import shutil
 import sys
 from concurrent.futures import ThreadPoolExecutor
-
+import threading
+from opts import opt
 import cv2
 import numpy as np
 from tqdm import tqdm
+import subprocess
 
 sys.path.append('../')
 from utils.IouUtils import calculate_iou
@@ -314,6 +317,9 @@ def generate_depart():
         draw_bboxes(f'../../dataset/HST/real/{camera_id}/{camera_id}.mp4',
                     frame_bboxes,
                     f'debug/{version}/target/{camera_id}.mp4', car_bbox_colors)
+    # 启动新的一个线程去执行下面这个函数
+    thread = threading.Thread(target=compress_video, args=(f'debug/{version}/target/',))
+    thread.start()
 
 
 def generate_all_in():
@@ -331,7 +337,9 @@ def generate_all_in():
                            frame_bboxes['gt'],
                            frame_bboxes['pred'],
                            f'debug/{version}/allIn/{camera_id}.mp4', gt_bbox_colors, pred_bbox_colors)
-
+    # 启动新的一个线程去执行下面这个函数
+    thread = threading.Thread(target=compress_video, args=(f'debug/{version}/allIn/',))
+    thread.start()
 
 def generate_remove_duplicate():
     bbox_info, gt_bbox_colors = get_bbox_data(gt_path)
@@ -348,16 +356,51 @@ def generate_remove_duplicate():
                                      frame_bboxes['gt'],
                                      frame_bboxes['pred'],
                                      f'debug/{version}/remove_duplicate/{camera_id}.mp4', gt_bbox_colors, pred_bbox_colors)
+    # 启动新的一个线程去执行下面这个函数
+    thread = threading.Thread(target=compress_video, args=(f'debug/{version}/remove_duplicate/',))
+    thread.start()
+
+def compress_video(video_path):
+    video_files = os.listdir(video_path)
+    #video_files过滤出视频文件 并获取绝对路径
+    video_files = [os.path.join(video_path, file) for file in video_files if file.endswith('.mp4')]
+    output_path = os.path.join(video_path, '压缩')
+    # 删除压缩文件夹
+    if os.path.exists(output_path):
+        shutil.rmtree(output_path)
+    # 创建压缩文件夹
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)    
+    # 遍历并压缩所有视频
+    for input_path in tqdm(video_files, desc="压缩视频"):
+        
+        # 使用FFmpeg进行压缩
+        command = [
+        "ffmpeg",
+        "-i", input_path,
+        "-c:v", "libx264",
+        "-crf", '23',
+        "-preset", 'medium',
+        "-c:a", "copy",
+        os.path.join(output_path,input_path.split('/')[-1])
+        ]
+
+        try:
+            subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except subprocess.CalledProcessError as e:
+            print(f"压缩 {input_path} 时出错: {e}")
+        
+    print("所有视频压缩完成!")
+    
 
 
 if __name__ == '__main__':
-    version = 'v3'
+    version = 'v'+str(opt.version)
     detection_path = f'result/version/{version}.txt'
     gt_path = 'test_gt.txt'
     generate_all_in()
     generate_depart()
     generate_remove_duplicate()
-    # bbox_info, gt_bbox_colors = get_bbox_data(gt_path)
     # all_in_bbox_info = {}
     # for camera_id, frame_bboxes in bbox_info.items():
     #     if camera_id not in all_in_bbox_info:

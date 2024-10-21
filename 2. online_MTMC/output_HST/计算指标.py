@@ -488,8 +488,8 @@ def my_print_result(summary):
             else:
                 print(format_str.format(key, value,  info[key]))
 if __name__ == '__main__':
-    detection_path = f'debug_单摄像头分析/44_pred.txt'
-    gt_path = 'debug_单摄像头分析/44_gt.txt'
+    detection_path = f'result/version/v8.txt'
+    gt_path = 'test_gt.txt'
     # calculate_results('ground_truth_validation.txt', f'ground_truth_validation.txt')
     calculate_results(gt_path, detection_path)
     # calculate_results('test_gt.txt','test_pred.txt')

@@ -10,7 +10,9 @@ import copy
 import torch
 import numpy as np
 from tqdm import tqdm
-from outputs.eval import calculate_results
+
+from output_HST.将视频取帧放入训练yolo的数据集中 import output_path
+from output_HST.计算指标 import calculate_results
 from opts import opt
 from torchvision import transforms
 from utils.sklearn_dunn import dunn
@@ -180,7 +182,7 @@ class MTMCT(object):
             self.overlap_regions_cam2cam[cam] = {}
             for cam_ in self.cams:
                 self.overlap_regions_cam2cam[cam][cam_] = cv2.imread(
-                    './preliminary/overlap_zones/HST/%s_%s.png' % (cam, cam_),
+                    '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/preliminary/overlap_zones/HST/%s_%s.png' % (cam, cam_),
                     cv2.IMREAD_GRAYSCALE) if cam_ != cam else None
         self.temp_align = prepare_align(self.cams, self.f_nums)
         for tracker in self.trackers.values():
@@ -196,6 +198,7 @@ class MTMCT(object):
         self.next_global_id, self.dunn_index_prev = 0, -1e5
         self.clusters_dict = {}
         self.result = []
+        self.result_set = set()
 
     def run_mtmct(self):
         # Run
@@ -214,25 +217,31 @@ class MTMCT(object):
             online_tracks_raw = self.MTSCT_online(feat, detection)
             # detection是一个dict，key是摄像头，value是检测结果，是一个list，每个元素是一个五维数组，分别是 左上角xy和长宽 置信度
             # 根据detection把bbox绘制到图片中
-            # base_path='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real'
-            # for det in detection:
-            #     # img_path 最后的路径类似于'det_f00001.jpg','det_f00002.jpg','det_f00003.jpg'
-            #     img_path = os.path.join(base_path, det, 'frame', f'{det}_f{fdx+1:04d}.jpg')
-            #     save_path = os.path.join(base_path, det, 'MTMCT中对图片进行debug', f'{det}_f{fdx+1:04d}.jpg')
-            #     # 判断save路径的父目录存不存在
-            #     if not os.path.exists(os.path.dirname(save_path)):
-            #         os.makedirs(os.path.dirname(save_path))
-            #     img = cv2.imread(img_path)
-            #     for box in detection[det]:
-            #         # 左上角xy和长宽 置信度
-            #         left, top, width, height, conf = box
-            #         left, top, width, height = map(int, [left, top, width, height])
-            #         # 绘制边界框
-            #         cv2.rectangle(img, (left, top), (left + width, top + height), (0, 255, 0), 2)
-            #         # 添加标签
-            #         cv2.putText(img, f'{conf:.2f}', (left, top - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-            #     cv2.imwrite(save_path, img)
-            # 跨摄像头跟踪
+            if draw_debug_image :
+                base_path='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real'
+                output_path ='./output_HST/逐帧目标检测'
+                for det in detection:
+                    # img_path 最后的路径类似于'det_f00001.jpg','det_f00002.jpg','det_f00003.jpg'
+                    img_path = os.path.join(base_path, det, 'frame', f'{det}_f{fdx+1:04d}.jpg')
+                    save_path = os.path.join(output_path, det, 'MTMCT中对图片进行debug', f'{det}_f{fdx+1:04d}.jpg')
+                    # 判断save路径的父目录存不存在
+                    if not os.path.exists(os.path.dirname(save_path)):
+                        os.makedirs(os.path.dirname(save_path))
+                    img = cv2.imread(img_path)
+                    for box in detection[det]:
+                        # 左上角xy和长宽 置信度
+                        center_x, center_y, width, height, conf = box
+                        left = int(center_x - width / 2)
+                        top = int(center_y - height / 2)
+                        width = int(width)
+                        height = int(height)
+                        # 绘制边界框
+                        cv2.rectangle(img, (left, top), (left + width, top + height), (0, 255, 0), 2)
+                        # 添加标签
+                        cv2.putText(img, f'{conf:.2f}', (left, top - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                    if img is not None:
+                        cv2.imwrite(save_path, img)
+                # 跨摄像头跟踪
             self.mtmct_online(fdx, online_tracks_raw)
         directory = os.path.dirname(self.result_path)
         if not os.path.exists(directory):
@@ -276,117 +285,155 @@ class MTMCT(object):
             batch_img_ori[cdx] = torch.tensor(img_ori.transpose((2, 0, 1)) / 255.0, device='cuda')
         return batch_img, batch_img_ori, valid_cam
     def new_mtmct_online(self, fdx, online_tracks_raw):
+        direction = {
+            '41': ['42'],
+            '42': ['43'],
+            '43': ['44'],
+            '44': ['45'],
+            '45': ['46'],
+            '46': [],
+        }
+        for loc, values in direction.items():
+            loc_tracks = online_tracks_raw[loc]
+            new_online_tracks_raw = {
+                loc: loc_tracks,
+            }
+            if len(values) == 0:
+                continue
+            for target in values:
+                new_online_tracks_raw[target] = online_tracks_raw[target]
+            self.mtmct_online(fdx, new_online_tracks_raw)
         pass
     def mtmct_online(self, fdx, online_tracks_raw):
         start = time.time()
+        # 过滤原始跟踪结果,去除不符合条件的跟踪
         online_tracks_filtered = self.filter_online_tracks(online_tracks_raw)
-        # Merge
+        
+        # 合并所有摄像头的跟踪结果
         online_tracks = []
         for cam in self.cams:
             online_tracks += online_tracks_filtered[cam]
-        # Gather current tracking global ids
+        
+        # 收集当前已分配的全局ID
         online_global_ids = {'41': [], '42': [], '43': [], '44': [], '45': [], '46': []}
         for track in online_tracks:
             if track.global_id is not None:
                 online_global_ids[track.cam].append(track.global_id)
-        # 获取feat数据并计算特征距离
+        
+        # 获取特征数据并计算特征距离
         online_feats = np.array([track.get_feature(mode=opt.get_feat_mode) for track in online_tracks])
-        if len(online_feats) < 2 :
+        if len(online_feats) < 2:
             return
         p_dists = pdist(online_feats, metric='cosine')
-        p_dists = np.clip(p_dists, 0, 1)  # 归一化
-        # Apply constraints
+        p_dists = np.clip(p_dists, 0, 1)  # 归一化距离到[0,1]区间
+        
+        # 应用约束条件,过滤不符合条件的跟踪对
         self.filter_tracks_by_overlap(online_tracks, p_dists)
-        # Clustering =================================================================================================
-        # Generate linkage matrix with hierarchical clustering
+        
+        # 聚类 =================================================================================================
+        # 使用层次聚类生成链接矩阵
         linkage_matrix = linkage(p_dists, method='complete')
         ranked_dists = np.sort(list(set(list(linkage_matrix[:, 2]))), axis=None)
-        # Observe clusters with adjusting a distance threshold and calculate dunn index
+        
+        # 通过调整距离阈值观察聚类结果,并计算Dunn指数
         clusters, dunn_indices, c_dists = [], [], squareform(p_dists)
         for rdx in range(2, ranked_dists.shape[0] + 1):
             if ranked_dists[-rdx] <= opt.mtmc_match_thr:
                 clusters.append(fcluster(linkage_matrix, ranked_dists[-rdx] + 1e-5, criterion='distance') - 1)
                 dunn_indices.append(dunn(clusters[-1], c_dists))
+        
         if len(clusters) == 0:
             cluster = fcluster(linkage_matrix, ranked_dists[0] - 1e-5, criterion='distance') - 1
         else:
-            # Choose the most connected cluster except inappropriate pairs
-            # Get the index of the dunn indices where the values suddenly jump.
+            # 选择最连通的聚类结果,排除不适当的配对
+            # 获取Dunn指数突然跳跃的索引
             dunn_indices.insert(0, 0)
             pos = np.argmax(np.diff(dunn_indices))
             cluster = clusters[pos]
-        # Run Multi-target Multi-Camera Tracking =====================================================================
-        # Initialize
+        
+        # 运行多目标多摄像头跟踪 =====================================================================
+        # 初始化
         num_cluster = len(list(set(list(cluster))))
-        # Assign global id to new tracks using other tracks in the same cluster
+        
+        # 使用同一聚类中的其他跟踪为新跟踪分配全局ID
         for cam_index in range(num_cluster):
             track_idx = np.where(cluster == cam_index)[0]
 
-            # Check index and global id of tracks in same cluster
+            # 检查同一聚类中跟踪的索引和全局ID
             infos = []
             for tdx in track_idx:
                 if online_tracks[tdx].global_id is not None:
                     infos.append([tdx, online_tracks[tdx].global_id])
 
-            # If some tracks in the cluster already has global id, assign same global id to new tracks
+            # 如果聚类中的某些跟踪已经有全局ID,则为新跟踪分配相同的全局ID
             if len(infos) > 0:
-                # Assign global id, Collect tracks, Update feature
+                # 分配全局ID,收集跟踪,更新特征
                 for tdx in track_idx:
                     if online_tracks[tdx].global_id is None:
-                        # Sort and get global id with the node with minimum distance
+                        # 排序并获取具有最小距离的节点的全局ID
                         sorted_infos = sorted(copy.deepcopy(infos), key=lambda x: c_dists[tdx, x[0]])
                         for info in sorted_infos:
                             if online_tracks[info[0]].global_id not in online_global_ids[online_tracks[tdx].cam]:
-                                # Assign global id, Collect
+                                # 分配全局ID,收集
                                 online_tracks[tdx].global_id = info[1]
                                 if info[1] in self.clusters_dict:
                                     self.clusters_dict[info[1]].add_track(online_tracks[tdx])
                                 break
-        # Get remaining current tracks
+        
+        # 获取剩余的当前跟踪
         remain_tracks = [track for track in online_tracks if track.global_id is None]
-        # Calculate pairwise distance between previous clusters and current clusters
+        
+        # 计算先前聚类和当前聚类之间的成对距离
         dists = pairwise_tracks_dist(self.clusters_dict, remain_tracks, fdx, metric='cosine')
-        # Run Hungarian algorithm
+        
+        # 运行匈牙利算法
         indices = linear_assignment(dists)
-        # Match with thresholding
+        
+        # 使用阈值进行匹配
         for row, col in indices:
             if dists[row, col] <= opt.mtmc_match_thr \
                     and list(self.clusters_dict.keys())[row] not in online_global_ids[remain_tracks[col].cam]:
-                # Assign global id, Collect track
+                # 分配全局ID,收集跟踪
                 remain_tracks[col].global_id = list(self.clusters_dict.keys())[row]
                 self.clusters_dict[list(self.clusters_dict.keys())[row]].add_track(remain_tracks[col])
-        # If not matched newly starts
+        
+        # 如果未匹配,则新建跟踪
         for remain_track in remain_tracks:
             if remain_track.global_id is None:
-                # Assign global id, Collect track
+                # 分配全局ID,收集跟踪
                 remain_track.global_id = self.next_global_id
                 self.clusters_dict[self.next_global_id] = Cluster()
                 self.clusters_dict[self.next_global_id].add_track(remain_track)
 
-                # Increase
+                # 增加全局ID计数
                 self.next_global_id += 1
-        # Delete too old cluster
+        
+        # 删除过旧的聚类
         del_key = [key for key in self.clusters_dict.keys() if
                    fdx - self.clusters_dict[key].end_frame > opt.max_time_differ]
         for key in del_key:
             del self.clusters_dict[key]
+        
         self.total_times['MTMC'] += time.time() - start
-        # Logging
+        
+        # 记录结果
         for track in online_tracks:
             left, top, w, h = track.tlwh
 
-            # Expand box, Since gt boxes are not tightly annotated around objects and quite larger than objects
+            # 扩展边界框,因为gt边界框并不是紧密地围绕对象,而是比对象大得多
             cx, cy = left + w / 2, top + h / 2
             # w, h = w * 1.45, h * 1.45
             left, top = cx - w / 2, cy - h / 2
 
-            # Filter with size, Since gt does not include small boxes
+            # 根据大小过滤,因为gt不包括小边界框
             # if w * h / self.img_w / self.img_h < 0.003 or 0.3 < w * h / self.img_w / self.img_h:
             #     continue
             format = '%d %d %d %d %d %d %d -1 -1' % (
                 int(track.cam[-2:]), track.global_id, self.temp_align[track.cam][fdx], int(left), int(top), int(w),
                 int(h))
-            self.result.append(format)
+            if format not in  self.result_set:
+                self.result.append(format)
+                self.result_set.add(format)
 
     def filter_tracks_by_overlap(self, online_tracks, p_dists):
         for i in range(len(online_tracks)):
@@ -420,6 +467,8 @@ class MTMCT(object):
         online_tracks_filtered = {}
         for cam in self.cams:
             online_tracks_filtered[cam] = []
+            if cam not in online_tracks_raw:
+                continue
             for track in online_tracks_raw[cam]:
                 # If not activated
                 if not track.is_activated:
@@ -430,16 +479,15 @@ class MTMCT(object):
                     continue
 
                 # Filter detection with small box size, Since gt does not include small boxes
-                w, h = track.tlwh[2:]
-                if h * w <= self.img_h * self.img_w * opt.min_box_size:
+                w, h = int(track.obs_history[-1][1][2]),int(track.obs_history[-1][1][3])
+                min_box_size = self.img_h * self.img_w * opt.min_box_size
+                if h * w <= min_box_size:
                     continue
 
                 # Filter detections around border, Since gt does not include boxes around border
                 x1, y1, x2, y2 = track.x1y1x2y2
-                if x1 <= 5 or y1 <= 5 or x2 >= self.img_w - 5 or y2 >= self.img_h - 5:
+                if x1 <= 4 or y1 <= 4 or x2 >= self.img_w - 5 or y2 >= self.img_h - 5:
                     continue
-
-                # Append
                 online_tracks_filtered[cam].append(track)
 
             # Class agnostic NMS, Since gt does not include overlapped boxes
@@ -485,8 +533,8 @@ class MTMCT(object):
                         continue
 
                     # 过滤掉小数据
-                    if (x2 - x1) * (y2 - y1) <= self.img_h * self.img_w * opt.min_box_size / 2:
-                        continue
+                    # if (x2 - x1) * (y2 - y1) <= self.img_h * self.img_w * opt.min_box_size / 2:
+                    #     continue
 
                     # Add detections
                     new_box = np.array([(x1 + x2) / 2, (y1 + y2) / 2, (x2 - x1), (y2 - y1), conf.item()])
@@ -649,7 +697,7 @@ def debug():
 def main():
     mtmct = run()
     # mtmct = read_pkl_from_file(outputs_mtmct_pkl)
-    calculate_results('output_HST/test_gt.txt', mtmct.result_path)
+    calculate_results('/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/test_gt.txt', mtmct.result_path)
     return mtmct
 
 # 模型配置文件
@@ -659,6 +707,7 @@ data_yaml_path = './yolov10/datasets/multi_class/data.yaml'
 # 预训练模型
 
 if __name__ == '__main__':
+    draw_debug_image = False
     if opt.train:
         pretrain_type = opt.pretrain_type
         pre_model_name = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/yolov10/models/yolov10{pretrain_type}.pt'
@@ -685,7 +734,7 @@ if __name__ == '__main__':
             pickle.dump(mtmct, f)
         calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
     else:
-        opt.version = 3
+        draw_debug_image = False
         mtmct_version = f'version/v{opt.version}'
         outputs_mtmct_pkl = 'outputs/mtmct.pkl'
         main()
