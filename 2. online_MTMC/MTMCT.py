@@ -199,6 +199,7 @@ class MTMCT(object):
         self.clusters_dict = {}
         self.result = []
         self.result_set = set()
+        self.ReId = ReId('./reid/logs/Veri776/MBR_4G/0/')
 
     def run_mtmct(self):
         # Run
@@ -308,40 +309,40 @@ class MTMCT(object):
         start = time.time()
         # 过滤原始跟踪结果,去除不符合条件的跟踪
         online_tracks_filtered = self.filter_online_tracks(online_tracks_raw)
-        
+
         # 合并所有摄像头的跟踪结果
         online_tracks = []
         for cam in self.cams:
             online_tracks += online_tracks_filtered[cam]
-        
+
         # 收集当前已分配的全局ID
         online_global_ids = {'41': [], '42': [], '43': [], '44': [], '45': [], '46': []}
         for track in online_tracks:
             if track.global_id is not None:
                 online_global_ids[track.cam].append(track.global_id)
-        
+
         # 获取特征数据并计算特征距离
         online_feats = np.array([track.get_feature(mode=opt.get_feat_mode) for track in online_tracks])
         if len(online_feats) < 2:
             return
         p_dists = pdist(online_feats, metric='cosine')
         p_dists = np.clip(p_dists, 0, 1)  # 归一化距离到[0,1]区间
-        
+
         # 应用约束条件,过滤不符合条件的跟踪对
         self.filter_tracks_by_overlap(online_tracks, p_dists)
-        
+
         # 聚类 =================================================================================================
         # 使用层次聚类生成链接矩阵
         linkage_matrix = linkage(p_dists, method='complete')
         ranked_dists = np.sort(list(set(list(linkage_matrix[:, 2]))), axis=None)
-        
+
         # 通过调整距离阈值观察聚类结果,并计算Dunn指数
         clusters, dunn_indices, c_dists = [], [], squareform(p_dists)
         for rdx in range(2, ranked_dists.shape[0] + 1):
             if ranked_dists[-rdx] <= opt.mtmc_match_thr:
                 clusters.append(fcluster(linkage_matrix, ranked_dists[-rdx] + 1e-5, criterion='distance') - 1)
                 dunn_indices.append(dunn(clusters[-1], c_dists))
-        
+
         if len(clusters) == 0:
             cluster = fcluster(linkage_matrix, ranked_dists[0] - 1e-5, criterion='distance') - 1
         else:
@@ -350,11 +351,11 @@ class MTMCT(object):
             dunn_indices.insert(0, 0)
             pos = np.argmax(np.diff(dunn_indices))
             cluster = clusters[pos]
-        
+
         # 运行多目标多摄像头跟踪 =====================================================================
         # 初始化
         num_cluster = len(list(set(list(cluster))))
-        
+
         # 使用同一聚类中的其他跟踪为新跟踪分配全局ID
         for cam_index in range(num_cluster):
             track_idx = np.where(cluster == cam_index)[0]
@@ -379,16 +380,16 @@ class MTMCT(object):
                                 if info[1] in self.clusters_dict:
                                     self.clusters_dict[info[1]].add_track(online_tracks[tdx])
                                 break
-        
+
         # 获取剩余的当前跟踪
         remain_tracks = [track for track in online_tracks if track.global_id is None]
-        
+
         # 计算先前聚类和当前聚类之间的成对距离
         dists = pairwise_tracks_dist(self.clusters_dict, remain_tracks, fdx, metric='cosine')
-        
+
         # 运行匈牙利算法
         indices = linear_assignment(dists)
-        
+
         # 使用阈值进行匹配
         for row, col in indices:
             if dists[row, col] <= opt.mtmc_match_thr \
@@ -396,7 +397,7 @@ class MTMCT(object):
                 # 分配全局ID,收集跟踪
                 remain_tracks[col].global_id = list(self.clusters_dict.keys())[row]
                 self.clusters_dict[list(self.clusters_dict.keys())[row]].add_track(remain_tracks[col])
-        
+
         # 如果未匹配,则新建跟踪
         for remain_track in remain_tracks:
             if remain_track.global_id is None:
@@ -407,15 +408,15 @@ class MTMCT(object):
 
                 # 增加全局ID计数
                 self.next_global_id += 1
-        
+
         # 删除过旧的聚类
         del_key = [key for key in self.clusters_dict.keys() if
                    fdx - self.clusters_dict[key].end_frame > opt.max_time_differ]
         for key in del_key:
             del self.clusters_dict[key]
-        
+
         self.total_times['MTMC'] += time.time() - start
-        
+
         # 记录结果
         for track in online_tracks:
             left, top, w, h = track.tlwh
@@ -557,6 +558,8 @@ class MTMCT(object):
         with torch.autocast('cuda'):
             batch_patch = batch_patch[:det_count]
             batch_feat = self.feat_ext_model(batch_patch)
+        new_batch_feat = self.ReId.reid(batch_patch)
+        new_batch_feat = new_batch_feat.squeeze().cpu().numpy()
         batch_feat = batch_feat.squeeze().cpu().numpy()
         # 当batch_feat为一维的时候，给它改成二维
         if batch_feat.ndim == 1:
