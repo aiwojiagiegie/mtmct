@@ -80,7 +80,7 @@ def process_video(video_path, output_path, gt_file_path, model):
     progress_bar = tqdm(total=total_frames, desc=f"处理{video_path}中")
 
     frame_number = 0
-    cam = int(video_path.split('/')[-2].split('.')[0][1:])
+    cam = int(video_path.split('/')[-2].split('.')[0][:])
     bbox_data_gt = bbox_info.get(cam, {})
 
     while True:
@@ -116,16 +116,16 @@ def process_video_wrapper(args):
     process_video(video_path, output_path, gt_file_path, model)
 
 if __name__ == '__main__':
-    model = YOLOv10('/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/preliminary/det_weights/my/best_multiple3.pt')
-    gt_file_path = '2. online_MTMC/outputs/ground_truth_validation.txt'
-    video_dir_path = 'dataset/AIC19/validation/S02'
-    output_dir_path = '2. online_MTMC/outputs/根据gt和目标检测模型生成合并在一起的视频'
+    model = YOLOv10('/home/chatmindai/project/zhangkun/yolov10/runs/detect/UA-DETRAC_pre/model_name_yolov10s.pt/epochs_200/batch_322/weights/best.pt')
+    gt_file_path = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/test_gt.txt'
+    video_dir_path = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real/'
+    output_dir_path = 'output_HST/根据gt和目标检测模型生成合并在一起的视频'
 
     # 准备所有视频的处理参数
     video_tasks = []
-    for cam in range(6, 10):
-        video_path = os.path.join(video_dir_path,  f'c00{cam}/vdo.avi')
-        output_path = os.path.join(output_dir_path, f'c00{cam}_combined.mp4')
+    for cam in range(1, 7):
+        video_path = os.path.join(video_dir_path,  f'4{cam}/4{cam}.mp4')
+        output_path = os.path.join(output_dir_path, f'4{cam}.mp4')
         video_tasks.append((video_path, output_path, gt_file_path, model))
 
     # 使用线程池执行视频处理任务

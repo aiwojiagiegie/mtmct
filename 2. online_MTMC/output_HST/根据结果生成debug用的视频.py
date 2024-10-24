@@ -332,14 +332,40 @@ def generate_all_in():
         all_in_bbox_info[camera_id]['gt'] = frame_bboxes
     for camera_id, frame_bboxes in target_info.items():
         all_in_bbox_info[camera_id]['pred'] = frame_bboxes
+    
     for camera_id, frame_bboxes in all_in_bbox_info.items():
+        output_path = f'debug/{version}/allIn/{camera_id}.mp4'
         draw_bboxes_all_in(f'../../dataset/HST/real/{camera_id}/{camera_id}.mp4',
                            frame_bboxes['gt'],
                            frame_bboxes['pred'],
-                           f'debug/{version}/allIn/{camera_id}.mp4', gt_bbox_colors, pred_bbox_colors)
-    # 启动新的一个线程去执行下面这个函数
-    thread = threading.Thread(target=compress_video, args=(f'debug/{version}/allIn/',))
-    thread.start()
+                           output_path, gt_bbox_colors, pred_bbox_colors)
+        
+        # 为每个生成的视频启动一个新线程进行压缩
+        thread = threading.Thread(target=compress_single_video, args=(output_path,))
+        thread.start()
+
+def compress_single_video(input_path):
+    output_dir = os.path.join(os.path.dirname(input_path), '压缩')
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    output_path = os.path.join(output_dir, os.path.basename(input_path))
+    
+    command = [
+        "ffmpeg",
+        "-i", input_path,
+        "-c:v", "libx264",
+        "-crf", '23',
+        "-preset", 'medium',
+        "-c:a", "copy",
+        output_path
+    ]
+
+    try:
+        subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print(f"视频 {input_path} 压缩完成!")
+    except subprocess.CalledProcessError as e:
+        print(f"压缩 {input_path} 时出错: {e}")
 
 def generate_remove_duplicate():
     bbox_info, gt_bbox_colors = get_bbox_data(gt_path)
@@ -423,5 +449,6 @@ if __name__ == '__main__':
     # for camera_id, frame_bboxes in all_in_bbox_info.items():
     #     draw_bboxes_single_in(f'../../dataset/qianhuang/{camera_id}.mp4', frame_bboxes['gt'],
     #                        f'debug/{version}/single/{camera_id}.mp4', gt_bbox_colors)
+
 
 

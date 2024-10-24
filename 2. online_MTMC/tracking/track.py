@@ -120,7 +120,7 @@ class Track(BaseTrack):
         # Update, Save
         self.mean, self.covariance = self.kalman_filter.initiate(self.cxcywh)
         self.obs_history = [[frame_id, self.cxcywh.copy(), self.confidence, self.curr_feat.copy(),
-                             self.mean.copy(), self.covariance.copy()]]
+                             self.mean.copy(), self.covariance.copy(), "未知"]]
 
         # Set
         self.frame_id = frame_id
@@ -128,14 +128,16 @@ class Track(BaseTrack):
         self.state = TrackState.Tracked
         self.is_activated = True if frame_id == 0 else self.is_activated
 
-    def update(self, new_det, frame_id):
+    def update(self, new_det, frame_id, lane):
         self.frame_id = frame_id
 
         # Update
         self.mean, self.covariance = self.kalman_filter.update(self.mean, self.covariance,
                                                                new_det.cxcywh, new_det.confidence)
-        self.obs_history.append([frame_id, new_det.cxcywh.copy(), new_det.confidence, copy.deepcopy(new_det.curr_feat),
-                                 self.mean.copy(), self.covariance.copy()])
+        # 更新obs_history，包含车道信息
+        self.obs_history.append([frame_id, new_det.cxcywh.copy(), new_det.confidence, 
+                                 copy.deepcopy(new_det.curr_feat), self.mean.copy(), 
+                                 self.covariance.copy(), lane])
 
         if new_det.curr_feat is not None:
             self.update_features(new_det.curr_feat)
@@ -149,8 +151,12 @@ class Track(BaseTrack):
         # Update
         self.mean, self.covariance = self.kalman_filter.update(self.mean, self.covariance,
                                                                new_det.cxcywh, new_det.confidence)
-        self.obs_history.append([frame_id, new_det.cxcywh.copy(), new_det.confidence, new_det.curr_feat.copy(),
-                                 self.mean.copy(), self.covariance.copy()])
+        
+        # 更新obs_history，包含车道信息
+        lane = getattr(new_det, 'lane', None)  # 如果new_det没有lane属性，默认为None
+        self.obs_history.append([frame_id, new_det.cxcywh.copy(), new_det.confidence, 
+                                 new_det.curr_feat.copy(), self.mean.copy(), 
+                                 self.covariance.copy(), lane])
 
         if new_det.curr_feat is not None:
             self.update_features(new_det.curr_feat)
@@ -208,5 +214,21 @@ class Track(BaseTrack):
         ret = self.tlwh.copy()
         ret[2:] += ret[:2]
         return ret
+
+    @property
+    def current_lane(self):
+        if not self.obs_history:
+            return None
+        
+        for obs in reversed(self.obs_history):
+            # 检查检测框大小是否大于1000
+            if obs[1][2] * obs[1][3] >= 3000 and obs[6] != "未知":
+                return obs[6]
+        
+        return self.obs_history[0][6]  # 如果所有有效记录都是"未知"，则返回"未知"
+
     def __repr__(self):
-        return 'OT_{}_({}-{})_{}_{}_{}'.format(self.track_id, self.start_frame, self.end_frame, self.state,self.global_id, self.cam)
+        return 'OT_{}_({}-{})_{}_{}_{}_{}'.format(
+            self.track_id, self.start_frame, self.end_frame, 
+            self.state, self.global_id, self.cam, self.current_lane
+        )

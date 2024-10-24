@@ -217,51 +217,89 @@ def load_lane_images(camera_ids):
         lane_images[camera_id] = cv2.imread(image_path)
     return lane_images
 
-def get_lane(image, x, y):
-    color = image[y, x]
-    if np.all(color[2] >= 200):  # 红色
-        return "右车道"
-    elif np.all(color[0] >= 200):  # 蓝色
-        return "左车道"
-    else:
-        return "未知"
+def get_lane(image, box):
+    left, top, width, height = box
+    bottom = top + height
+    
+    # 使用底部的多个点进行采样
+    sample_points = [
+        (left + width // 4, bottom - 1),
+        (left + width // 2, bottom - 1),
+        (left + 3 * width // 4, bottom - 1)
+    ]
+    
+    lane_votes = {"左车道": 0, "右车道": 0, "未知": 0}
+    
+    for x, y in sample_points:
+        if y >= image.shape[0] or x >= image.shape[1]:
+            lane_votes["未知"] += 1
+            continue
+        
+        color = image[y, x]
+        if color[2] >= 200:  # 红色
+            lane_votes["右车道"] += 1
+        elif color[0] >= 200:  # 蓝色
+            lane_votes["左车道"] += 1
+        else:
+            lane_votes["未知"] += 1
+    
+    # 返回得票最多的车道
+    return max(lane_votes, key=lane_votes.get)
 
 def analyze_vehicle_frames(bbox_data):
     lane_images = load_lane_images([f'4{i}' for i in range(1, 7)])  # 加载所有摄像头的车道图像
     vehicle_frame_analysis = []
     lane_change_vehicles = []
+    lane_change_sizes = []
 
     for car_id in set(car_id for camera in bbox_data.values() for frame in camera.values() for _, _, _, _, car_id in frame):
         for camera_id, frames in bbox_data.items():
-            car_frames = [frame for frame, boxes in frames.items() if any(cid == car_id for _, _, _, _, cid in boxes)]
+            car_frames = sorted([frame for frame, boxes in frames.items() if any(cid == car_id for _, _, _, _, cid in boxes)])
             if car_frames:
-                start_frame = min(car_frames)
-                end_frame = max(car_frames)
+                start_frame = car_frames[0]
+                end_frame = car_frames[-1]
                 frame_diff = end_frame - start_frame
 
                 # 获取车辆在该摄像头中的第一帧和最后一帧的位置
                 start_box = next(box for box in frames[start_frame] if box[4] == car_id)
                 end_box = next(box for box in frames[end_frame] if box[4] == car_id)
 
-                # 计算车辆的中心点
-                start_center = (int(start_box[0] + start_box[2] / 2), int(start_box[1] + start_box[3] / 2))
-                end_center = (int(end_box[0] + end_box[2] / 2), int(end_box[1] + end_box[3] / 2))
-
                 # 获取车道信息
                 lane_image = lane_images[f'{camera_id}']
-                start_lane = get_lane(lane_image, start_center[0], start_center[1])
-                end_lane = get_lane(lane_image, end_center[0], end_center[1])
+                start_lane = get_lane(lane_image, start_box[:4])
+                end_lane = get_lane(lane_image, end_box[:4])
 
                 # 检查是否发生车道变化
                 if start_lane != end_lane and start_lane != "未知" and end_lane != "未知":
-                    lane_change_vehicles.append({
-                        'car_id': car_id,
-                        'camera_id': camera_id,
-                        'start_frame': start_frame,
-                        'end_frame': end_frame,
-                        'start_lane': start_lane,
-                        'end_lane': end_lane
-                    })
+                    # 找到变道后的第一帧
+                    change_frame = None
+                    for frame in car_frames:
+                        box = next(box for box in frames[frame] if box[4] == car_id)
+                        current_lane = get_lane(lane_image, box[:4])
+                        if current_lane == end_lane:
+                            change_frame = frame
+                            change_box = box
+                            break
+                    
+                    if change_frame:
+                        # 计算时间（假设25帧/秒）
+                        start_time = start_frame / 25
+                        change_time = change_frame / 25
+                        end_time = end_frame / 25
+                        lane_change_vehicles.append({
+                            'car_id': car_id,
+                            'camera_id': camera_id,
+                            'start_frame': start_frame,
+                            'start_time': start_time,
+                            'change_frame': change_frame,
+                            'change_time': change_time,
+                            'end_frame': end_frame,
+                            'end_time': end_time,
+                            'start_lane': start_lane,
+                            'end_lane': end_lane,
+                            'change_box_size': (change_box[2], change_box[3])
+                        })
+                        lane_change_sizes.append((change_box[2], change_box[3]))
 
                 vehicle_frame_analysis.append({
                     'car_id': car_id,
@@ -273,7 +311,7 @@ def analyze_vehicle_frames(bbox_data):
                     'end_lane': end_lane
                 })
 
-    return vehicle_frame_analysis, lane_change_vehicles
+    return vehicle_frame_analysis, lane_change_vehicles, lane_change_sizes
 
 def calculate_frame_diff(camera_sync, camera_id, frame_number):
     sync_frame = camera_sync[str(camera_id)]['frame']
@@ -303,7 +341,7 @@ def calculate_max_frame_diff_with_sync(bbox_data, camera_sync):
         for i in range(len(camera_ids) - 1):
             current_camera = camera_ids[i]
             next_camera = camera_ids[i + 1]
-            if next_camera - current_camera == 1:  # 确保是相邻的摄像头
+            if next_camera - current_camera == 1:  # 确保是相邻的摄头
                 frame_diff = appearances[next_camera]['first'] - appearances[current_camera]['last']
                 if frame_diff > max_frame_diff:
                     max_frame_diff = frame_diff
@@ -451,7 +489,7 @@ if __name__ == '__main__':
     target_cameras = [42, 43, 44, 45, 46]
     exclude_camera = 41
 
-    # 获取并打印符合条件的车辆��起始帧最晚的前10个
+    # 获取并打印符合条件的车辆起始帧最晚的前10个
     latest_start_frames = find_vehicles_not_in_camera(bbox_data, target_cameras, exclude_camera, top_n=10)
     
     print(f"\n在摄像头 {', '.join(map(str, target_cameras))} 中出现但未在摄像头 {exclude_camera} 中出现的车辆中，起始帧最晚的前10个:")
@@ -467,7 +505,7 @@ if __name__ == '__main__':
     print(latest_start_table)
 
     # 分析每个车辆在每个摄像头中的帧情况和车道变化
-    vehicle_frame_analysis, lane_change_vehicles = analyze_vehicle_frames(bbox_data)
+    vehicle_frame_analysis, lane_change_vehicles, lane_change_sizes = analyze_vehicle_frames(bbox_data)
     
     print("\n每个车辆在每个摄像头中的起止帧情况、帧差值及车道信息:")
     vehicle_frame_table = PrettyTable()
@@ -498,19 +536,39 @@ if __name__ == '__main__':
     # 打印车道发生变化的车辆信息
     print("\n车道发生变化的车辆信息:")
     lane_change_table = PrettyTable()
-    lane_change_table.field_names = ["车辆ID", "摄像头ID", "起始帧", "结束帧", "起始车道", "结束车道"]
+    lane_change_table.field_names = ["车辆ID", "摄像头ID", "起始帧(秒)", "变道帧(秒)", "结束帧(秒)", "起始车道", "结束车道", "变道后尺寸"]
     
     for info in lane_change_vehicles:
         lane_change_table.add_row([
             info['car_id'],
             info['camera_id'],
-            info['start_frame'],
-            info['end_frame'],
+            f"{info['start_frame']} ({info['start_time']:.2f}s)",
+            f"{info['change_frame']} ({info['change_time']:.2f}s)",
+            f"{info['end_frame']} ({info['end_time']:.2f}s)",
             info['start_lane'],
-            info['end_lane']
+            info['end_lane'],
+            f"{info['change_box_size'][0]}x{info['change_box_size'][1]}"
         ])
     
     print(lane_change_table)
+
+    # 计算变道后图片尺寸的统计信息
+    if lane_change_sizes:
+        widths, heights = zip(*lane_change_sizes)
+        avg_width = sum(widths) / len(widths)
+        avg_height = sum(heights) / len(heights)
+        min_width, max_width = min(widths), max(widths)
+        min_height, max_height = min(heights), max(heights)
+
+        print("\n变道后图片尺寸统计:")
+        size_stats_table = PrettyTable()
+        size_stats_table.field_names = ["统计项", "宽度", "高度"]
+        size_stats_table.add_row(["平均值", f"{avg_width:.2f}", f"{avg_height:.2f}"])
+        size_stats_table.add_row(["最小值", min_width, min_height])
+        size_stats_table.add_row(["最大值", max_width, max_height])
+        print(size_stats_table)
+    else:
+        print("\n没有发现变道的车辆。")
 
     # 新增的使用同步信息的函数调用
     camera_sync = {

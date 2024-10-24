@@ -429,10 +429,9 @@ def usage(msg=None):
         print("%s\n" % msg)
     print("\nUsage: %s" % usageMsg())
     exit()
-
-
 info = {
     "idf1": "评估跟踪器和基准真实数据之间的一致性",
+    "mota": "表示整体跟踪准确率。",
     "idp": "正确识别的目标比例。",
     "idr": "从所有真实目标中，被正确识别的比例。",
     "recall": "召回率",
@@ -445,7 +444,6 @@ info = {
     "num_misses": "未被跟踪到的真实目标数。",
     "num_switches": "目标身份在跟踪过程中错误切换的次数。",
     "num_fragmentations": "目标跟踪过程中断然后重新开始的次数。",
-    "mota": "表示整体跟踪准确率。",
     "motp": "表示跟踪的位置精度。",
     "num_frames": "数据中的帧数。",
     "idfp": "错误跟踪的目标数。",
@@ -455,6 +453,8 @@ info = {
     "num_ascend": "目标在场景中升级或升高的次数。",
     "num_migrate": "目标从一个区域迁移到另一个区域的次数。"
 }
+
+
 
 def calculate_results(test_path, pred_path, mread=False, dstype='validation', roidir='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real'):
     test = readData(test_path)
@@ -488,7 +488,7 @@ def my_print_result(summary):
             else:
                 print(format_str.format(key, value,  info[key]))
 if __name__ == '__main__':
-    detection_path = f'result/version/vn5.txt'
+    detection_path = f'result/version/vn12.txt'
     gt_path = 'test_gt.txt'
     # detection_path = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/debug_sort/pred_17.txt'
     # gt_path = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/debug_sort/gt_20.txt'

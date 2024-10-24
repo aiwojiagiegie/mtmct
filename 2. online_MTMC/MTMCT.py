@@ -19,7 +19,7 @@ from utils.sklearn_dunn import dunn
 from tracking.bot_sort import BoTSORT
 from utils.datasets import LoadImages
 from models.experimental import attempt_load
-from scipy.spatial.distance import pdist, squareform
+from scipy.spatial.distance import pdist, squareform, cdist
 from scipy.cluster.hierarchy import linkage, fcluster
 from models.feature_extractor import FeatureExtractor
 from utils.scipy_linear_assignment import linear_assignment
@@ -134,7 +134,7 @@ class MTMCT(object):
         self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
         # 添加 lane_img 成员变量
-        self.lane_img = self.load_lane_images()
+        self.lane_images = self.load_lane_images()
         # Prepare ========================================================================================================
         # Prepare output folder
         self.output_dir = opt.output_dir
@@ -297,7 +297,7 @@ class MTMCT(object):
             '46': ['45']
         }
         from datetime import datetime, timedelta
-        # ��义摄像头时间同步信息
+        # 定义摄像头时间同步信息
         camera_sync = {
             '41': {'frame': 109, 'time': datetime.strptime('15:30:00', '%H:%M:%S')},
             '42': {'frame': 79, 'time': datetime.strptime('15:30:00', '%H:%M:%S')},
@@ -311,7 +311,7 @@ class MTMCT(object):
         # 过滤原始跟踪结果,去除不符合条件的跟踪
         target_tracks = {}
         for cam,tracker in self.trackers.items():
-            target_tracks[cam] = tracker.tracked
+            target_tracks[cam] = tracker.all_tracks
         online_tracks_filtered = self.filter_online_tracks(online_tracks_raw)
 
         # 合并所有摄像头的跟踪结果
@@ -324,43 +324,42 @@ class MTMCT(object):
             index = camera_order.index(track.cam)
             if index == 0:
                 if track.global_id is None:
-                    # 这里应该赋予新的车辆id
                     track.global_id = self.next_global_id
                     self.next_global_id += 1
             else:
                 if track.global_id is None:
-                    pre_index=index-1
-                    pre_cam=camera_order[pre_index]
-                    # 从online_tracks中找到pre_cam的track
+                    pre_index = index - 1
+                    pre_cam = camera_order[pre_index]
                     pre_tracks = [t for t in target_tracks[pre_cam] if t.cam == pre_cam]
-                    cur_tracks = [t for t in target_tracks[cam] if t.cam == cam]
+                    cur_tracks = [t for t in target_tracks[track.cam] if t.cam == track.cam]
 
                     # 过滤掉一些轨迹
-                    for pre_track in pre_tracks:
-                        if fdx - pre_track.obs_history[-1][0] > opt.max_time_lost:
-                            pre_tracks.remove(pre_track)
-                    # 约束条件有哪些？ 首先必须是前一个摄像头出现的车辆id
-                    online_feats = np.array([track.get_feature(mode=opt.get_feat_mode) for track in pre_tracks])
-                    if len(online_feats) >= 1:
-                        # online_feats 的第一个插入为track的特征
-                        online_feats = np.insert(online_feats, 0, track.get_feature(mode=opt.get_feat_mode), axis=0)
-                        # 计算online_feats之间的距离
-                        p_dists = pdist(online_feats, metric='cosine')
-                        p_dists = np.clip(p_dists, 0, 1)  # 归一化距离到[0,1]区间
-                        #遍历p-dists,遍历online_feats的元素长度-1个
-                        min_dist = float('inf')
-                        best_match = None
-                        for i in range(len(online_feats)-1):
-                            if p_dists[i] <= opt.mtmc_match_thr and p_dists[i] < min_dist:
-                                # 检查pre_tracks[i]的global_id是否已经在cur_tracks中出现
-                                if pre_tracks[i].global_id not in [t.global_id for t in cur_tracks if t.global_id is not None]:
-                                    min_dist = p_dists[i]
-                                    best_match = i
+                    pre_tracks = [pre_track for pre_track in pre_tracks if fdx - pre_track.obs_history[-1][0] <= opt.max_time_lost]
+
+                    if len(pre_tracks) >= 1:
+                        # 只匹配相同车道的轨迹
+                        same_lane_tracks = [t for t in pre_tracks if t.current_lane == track.current_lane]
+
+                        # 匹配相同车道的轨迹
+                        best_match, min_dist = self.find_best_match(track, same_lane_tracks, cur_tracks, opt.mtmc_match_thr)
+
                         if best_match is not None:
-                            track.global_id = pre_tracks[best_match].global_id
-                if track.global_id is None:
-                    track.global_id = self.next_global_id
-                    self.next_global_id += 1
+                            if best_match.global_id is not None:
+                                track.global_id = best_match.global_id
+                            else:
+                                best_match.global_id = self.next_global_id
+                                track.global_id = self.next_global_id
+
+                                self.next_global_id += 1
+                        else:
+                            # 如果没有匹配上，赋予新的轨迹ID
+                            track.global_id = self.next_global_id
+                            self.next_global_id += 1
+                    else:
+                        # 如果没有前一个摄像头的轨迹，赋予新的轨迹ID
+                        track.global_id = self.next_global_id
+                        self.next_global_id += 1
+
         self.record_result(fdx, online_tracks)
         pass
 
@@ -645,13 +644,29 @@ class MTMCT(object):
         # Detect =====================================================================================================
         # with torch.autocast('cuda'):
         #     preds = self.det_model(batch_img[list(valid_cam.values())], augment=opt.augment)[0]
-        # # NMS之后是最终的检��结果
+        # # NMS之后是最终的检结果
         # preds = non_max_suppression(preds, opt.conf_thres, opt.iou_thres,
         #                             classes=opt.classes, agnostic=opt.agnostic_nms)
         # for cam_index, cam in enumerate(self.cams):
         #     if not valid_cam[cam]:
         #         preds.insert(cam_index, torch.zeros((0, 6)).cuda().half())
-        preds_result = self.YOLOv10_detect_model(batch_img)
+        preds_result = []
+        for single_img in batch_img:
+            # 确保single_img是一个4D张量 [1, C, H, W]
+            if single_img.ndim == 3:
+                single_img = single_img.unsqueeze(0)
+            
+            # 对单个图像进行预测
+            single_pred = self.YOLOv10_detect_model(single_img)
+            
+            # 将单个预测结果添加到列表中
+            preds_result.append(single_pred)
+
+        # 如果需要,可以将preds_result组合成一个批量结果
+        # 具体的组合方式取决于YOLOv10_detect_model的输出格式
+        # 这里假设输出是一个列表,每个元素对应一张图像的预测结果
+        preds_result = [item for sublist in preds_result for item in sublist]
+
         ans = []
         for result in preds_result:
             boxes = result.boxes.data.tolist()
@@ -736,6 +751,29 @@ class MTMCT(object):
             image_path = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/preliminary/devied_zones/{cam}.png'
             lane_images[cam] = cv2.imread(image_path)
         return lane_images
+
+    def find_best_match(self, track, candidate_tracks, cur_tracks, match_threshold):
+        if not candidate_tracks:
+            return None, float('inf')
+
+        track_feat = track.get_feature(mode=opt.get_feat_mode)
+        candidate_feats = np.array([t.get_feature(mode=opt.get_feat_mode) for t in candidate_tracks])
+
+        # 计算距离
+        dists = cdist([track_feat], candidate_feats, metric='cosine')[0]
+        dists = np.clip(dists, 0, 1)  # 归一化距离到[0,1]区间
+
+        min_dist = float('inf')
+        best_match = None
+
+        for i, dist in enumerate(dists):
+            if dist <= match_threshold and dist < min_dist:
+                # 检查candidate_tracks[i]的global_id是否已经在cur_tracks中出现
+                if candidate_tracks[i].global_id not in [t.global_id for t in cur_tracks if t.global_id is not None]:
+                    min_dist = dist
+                    best_match = candidate_tracks[i]
+
+        return best_match, min_dist
 
 
 def caculate_tlwh(cxcywh):
@@ -832,6 +870,7 @@ if __name__ == '__main__':
         outputs_mtmct_pkl = f'{mtmct_version}/mtmct.pkl'
         main()
         # debug()
+
 
 
 

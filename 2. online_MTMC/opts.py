@@ -22,7 +22,7 @@ class Opts:
         self.parser.add_argument('--patch_size', type=int, default=[384, 384], help='inference size (pixels)')
 
         # Options for MTSC
-        self.parser.add_argument("--det_high_thresh", type=float, default=0.6)
+        self.parser.add_argument("--det_high_thresh", type=float, default=0.4)
         self.parser.add_argument("--det_low_thresh", type=float, default=0.1)
         self.parser.add_argument("--cos_thr", type=float, default=0.6)
         self.parser.add_argument("--iou_thr", type=float, default=0.6)
@@ -38,7 +38,7 @@ class Opts:
         self.parser.add_argument('--output_dir', type=str, default='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/result/')
         self.parser.add_argument('--min_box_size', type=int, default=0.0005, help='minimum box size')
         self.parser.add_argument('--img_ori_size', type=int, default=[1080, 1920], help='original image size (pixels)')
-        self.parser.add_argument('--version', type=str, default='n7', help='original image size (pixels)')
+        self.parser.add_argument('--version', type=str, default='n13', help='original image size (pixels)')
         # self.parser.add_argument('--version', type=str, default='26', help='original image size (pixels)')
         self.parser.add_argument("--train", help="是否训练新的模型", dest="train", type=bool, default="")
         self.parser.add_argument("--epoch", help="训练轮次", dest="epoch", type=int, default="300")

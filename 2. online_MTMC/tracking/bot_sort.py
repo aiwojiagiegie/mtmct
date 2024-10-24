@@ -97,6 +97,21 @@ def find_adjacent_bbox(all_boxes, target_box):
     return adjacent_index
 
 
+def get_lane(lane_image, x, y):
+    # 确保坐标在图像范围内
+    height, width = lane_image.shape[:2]
+    x = max(0, min(int(x), width - 1))
+    y = max(0, min(int(y), height - 1))
+
+    color = lane_image[y, x]
+    if color[2] >= 200:  # 红色通道
+        return "右车道"
+    elif color[0] >= 200:  # 蓝色通道
+        return "左车道"
+    else:
+        return "未知"
+
+
 class BoTSORT(object):
     def __init__(self, opt ):
         # Initialize
@@ -206,13 +221,8 @@ class BoTSORT(object):
             det = detections_first[d]
 
             if track.state == TrackState.Tracked:
-                old_lane = get_lane(lane_image, track.tlwh[0] + track.tlwh[2]/2, track.tlwh[1] + track.tlwh[3]/2)
-                track.update(detections_first[d], self.frame_id)
-                new_lane = get_lane(lane_image, track.tlwh[0] + track.tlwh[2]/2, track.tlwh[1] + track.tlwh[3]/2)
-                
-                if old_lane != new_lane and old_lane != "未知" and new_lane != "未知":
-                    track.lane_change = True
-                    track.lane_change_info = f"从 {old_lane} 到 {new_lane}"
+                new_lane = get_lane(lane_image, det.cxcywh[0] + det.cxcywh[2]/2, det.cxcywh[1] + det.cxcywh[3]/2)
+                track.update(detections_first[d], self.frame_id,new_lane)
                 
                 activated.append(track)
             else:
@@ -252,7 +262,8 @@ class BoTSORT(object):
             det = detections_second[d]
 
             if track.state == TrackState.Tracked:
-                track.update(det, self.frame_id)
+                new_lane = get_lane(lane_image, det.cxcywh[0] + det.cxcywh[2]/2, det.cxcywh[1] + det.cxcywh[3]/2)
+                track.update(det, self.frame_id,new_lane)
                 track.obs_history[-1][2] = self.opt.det_high_thresh+0.01
                 activated.append(track)
             else:
@@ -284,7 +295,8 @@ class BoTSORT(object):
 
         # Update state
         for t, d in matches:
-            unactivated[t].update(detections_first[d], self.frame_id)
+            new_lane = get_lane(lane_image, detections_first[d].cxcywh[0] + detections_first[d].cxcywh[2]/2, detections_first[d].cxcywh[1] + detections_first[d].cxcywh[3]/2)
+            unactivated[t].update(detections_first[d], self.frame_id,new_lane)
             activated.append(unactivated[t])
 
         # Update state
@@ -304,7 +316,6 @@ class BoTSORT(object):
 
                 # Initiate new track
                 track.initiate(self.kalman_filter, self.frame_id)
-                track.current_lane = get_lane(lane_image, track.tlwh[0] + track.tlwh[2]/2, track.tlwh[1] + track.tlwh[3]/2)
                 activated.append(track)
 
         # Update state
