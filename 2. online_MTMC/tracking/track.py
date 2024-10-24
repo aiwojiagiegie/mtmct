@@ -163,6 +163,7 @@ class Track(BaseTrack):
         self.track_id = self.next_id() if new_id else self.track_id
 
     def get_feature(self, mode='ema'):
+
         # Default use smoothed feature
         feat = self.smooth_feat
 
@@ -179,6 +180,8 @@ class Track(BaseTrack):
         elif mode == 'all':
             feat = np.array([o[3] for o in self.obs_history])
             feat = feat[np.newaxis] if len(feat.shape) == 1 else feat
+        elif mode == 'first':
+            return self.obs_history[0][3]
 
         return feat
 
@@ -205,6 +208,5 @@ class Track(BaseTrack):
         ret = self.tlwh.copy()
         ret[2:] += ret[:2]
         return ret
-
     def __repr__(self):
-        return 'OT_{}_({}-{})_{}_{}'.format(self.track_id, self.start_frame, self.end_frame, self.state,self.global_id)
+        return 'OT_{}_({}-{})_{}_{}_{}'.format(self.track_id, self.start_frame, self.end_frame, self.state,self.global_id, self.cam)

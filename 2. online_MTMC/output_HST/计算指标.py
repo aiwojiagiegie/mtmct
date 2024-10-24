@@ -488,8 +488,11 @@ def my_print_result(summary):
             else:
                 print(format_str.format(key, value,  info[key]))
 if __name__ == '__main__':
-    detection_path = f'result/version/v8.txt'
+    detection_path = f'result/version/vn5.txt'
     gt_path = 'test_gt.txt'
+    # detection_path = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/debug_sort/pred_17.txt'
+    # gt_path = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/debug_sort/gt_20.txt'
+
     # calculate_results('ground_truth_validation.txt', f'ground_truth_validation.txt')
     calculate_results(gt_path, detection_path)
     # calculate_results('test_gt.txt','test_pred.txt')

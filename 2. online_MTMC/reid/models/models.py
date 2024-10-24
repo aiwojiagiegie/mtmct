@@ -7,6 +7,8 @@ from torch import Tensor
 import numpy as np
 import copy
 
+from models.resnet_ibn_a import resnet50_ibn_a
+
 
 def pdist(vectors):
     distance_matrix = -2 * vectors.mm(torch.t(vectors)) + vectors.pow(2).sum(dim=1).view(1, -1) + vectors.pow(2).sum(
@@ -268,8 +270,11 @@ class base_branches(nn.Module):
         elif backbone == '34ibn':
             model_ft = torch.hub.load('XingangPan/IBN-Net', 'resnet34_ibn_a', pretrained=True)# 'resnet50_ibn_a'
         else:
-            model_ft = torch.hub.load('XingangPan/IBN-Net', 'resnet50_ibn_a', pretrained=True)
-            
+            # weight_path = '/home/chatmindai/.cache/torch/hub/checkpoints/resnet50_ibn_a-d9d0bb7b.pth'
+            model_ft = torch.hub.load("/home/chatmindai/.cache/torch/hub/XingangPan_IBN-Net_master/", 'resnet50_ibn_a',source='local', pretrained=True)
+            # model_ft = resnet50_ibn_a()
+            # model_ft.load_state_dict(torch.load(weight_path))
+
         if stride == 1:
             model_ft.layer4[0].downsample[0].stride = (1,1)
             if backbone == "34ibn":
@@ -287,7 +292,10 @@ class multi_branches(nn.Module):
     def __init__(self, n_branches, n_groups, pretrain_ongroups=True, end_bot_g=False, group_conv_mhsa=False, group_conv_mhsa_2=False, x2g = False, x4g=False):
         super(multi_branches, self).__init__()
 
-        model_ft = torch.hub.load('XingangPan/IBN-Net', 'resnet50_ibn_a', pretrained=True)
+        # model_ft = torch.hub.load('XingangPan/IBN-Net', 'resnet50_ibn_a', pretrained=True)
+        model_ft = torch.hub.load("/home/chatmindai/.cache/torch/hub/XingangPan_IBN-Net_master/", 'resnet50_ibn_a',
+                                  source='local', pretrained=True)
+
         model_ft= model_ft.layer4
         self.x2g = x2g
         self.x4g = x4g

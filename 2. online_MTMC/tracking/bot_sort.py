@@ -111,8 +111,10 @@ class BoTSORT(object):
         self.frame_id = -1
         self.max_time_lost = int(opt.max_time_lost)
         self.temp_align = None
-
-    def update(self, cam, detections, features, de_temp_align):
+    @property
+    def all_tracks(self):
+        return self.finished+self.lost+self.tracked
+    def update(self, cam, detections, features, de_temp_align, lane_image):
         """
         更新SCT的跟踪数据
         """
@@ -204,7 +206,14 @@ class BoTSORT(object):
             det = detections_first[d]
 
             if track.state == TrackState.Tracked:
+                old_lane = get_lane(lane_image, track.tlwh[0] + track.tlwh[2]/2, track.tlwh[1] + track.tlwh[3]/2)
                 track.update(detections_first[d], self.frame_id)
+                new_lane = get_lane(lane_image, track.tlwh[0] + track.tlwh[2]/2, track.tlwh[1] + track.tlwh[3]/2)
+                
+                if old_lane != new_lane and old_lane != "未知" and new_lane != "未知":
+                    track.lane_change = True
+                    track.lane_change_info = f"从 {old_lane} 到 {new_lane}"
+                
                 activated.append(track)
             else:
                 track.re_activate(det, self.frame_id, new_id=False)
@@ -295,6 +304,7 @@ class BoTSORT(object):
 
                 # Initiate new track
                 track.initiate(self.kalman_filter, self.frame_id)
+                track.current_lane = get_lane(lane_image, track.tlwh[0] + track.tlwh[2]/2, track.tlwh[1] + track.tlwh[3]/2)
                 activated.append(track)
 
         # Update state
@@ -326,3 +336,4 @@ class BoTSORT(object):
         self.tracked, self.lost = remove_duplicate_tracks(self.tracked, self.lost)
 
         return self.tracked
+

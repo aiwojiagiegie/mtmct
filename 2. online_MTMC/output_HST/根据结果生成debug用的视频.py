@@ -395,12 +395,13 @@ def compress_video(video_path):
 
 
 if __name__ == '__main__':
+    # opt.version=25
     version = 'v'+str(opt.version)
     detection_path = f'result/version/{version}.txt'
     gt_path = 'test_gt.txt'
     generate_all_in()
-    generate_depart()
-    generate_remove_duplicate()
+    # generate_depart()
+    # generate_remove_duplicate()
     # all_in_bbox_info = {}
     # for camera_id, frame_bboxes in bbox_info.items():
     #     if camera_id not in all_in_bbox_info:

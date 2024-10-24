@@ -26,7 +26,7 @@ class Opts:
         self.parser.add_argument("--det_low_thresh", type=float, default=0.1)
         self.parser.add_argument("--cos_thr", type=float, default=0.6)
         self.parser.add_argument("--iou_thr", type=float, default=0.6)
-        self.parser.add_argument("--max_time_lost", type=int, default=30)
+        self.parser.add_argument("--max_time_lost", type=int, default=200)
 
         # Options for MTMC
         self.parser.add_argument('--get_feat_mode', type=str, default='best')
@@ -38,13 +38,15 @@ class Opts:
         self.parser.add_argument('--output_dir', type=str, default='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/result/')
         self.parser.add_argument('--min_box_size', type=int, default=0.0005, help='minimum box size')
         self.parser.add_argument('--img_ori_size', type=int, default=[1080, 1920], help='original image size (pixels)')
-        self.parser.add_argument('--version', type=int, default=12, help='original image size (pixels)')
-        self.parser.add_argument("-train", help="是否训练新的模型", dest="train", type=bool, default="")
-        self.parser.add_argument("-epoch", help="训练轮次", dest="epoch", type=int, default="300")
-        self.parser.add_argument("-batch", help="训练batch", dest="batch", type=int, default="2")
-        self.parser.add_argument("-gpu", help="训练用的卡id", dest="gpu", type=int, default="0")
-        self.parser.add_argument("-yolo10_model", help="yolo模型权重", dest="yolo10_model", type=str, default="/home/chatmindai/project/zhangkun/yolov10/runs/detect/UA-DETRAC_pre/model_name_yolov10s.pt/epochs_200/batch_322/weights/best.pt")
-        self.parser.add_argument("-pretrain_type", help="yolo预训练模型类型", dest="pretrain_type", type=str, default="s")
+        self.parser.add_argument('--version', type=str, default='n7', help='original image size (pixels)')
+        # self.parser.add_argument('--version', type=str, default='26', help='original image size (pixels)')
+        self.parser.add_argument("--train", help="是否训练新的模型", dest="train", type=bool, default="")
+        self.parser.add_argument("--epoch", help="训练轮次", dest="epoch", type=int, default="300")
+        self.parser.add_argument("--batch", help="训练batch", dest="batch", type=int, default="2")
+        self.parser.add_argument("--gpu", help="训练用的卡id", dest="gpu", type=int, default="0")
+        self.parser.add_argument("--yolo10_model", help="yolo模型权重", dest="yolo10_model", type=str, default="/home/chatmindai/project/zhangkun/yolov10/runs/detect/UA-DETRAC_pre/model_name_yolov10s.pt/epochs_200/batch_322/weights/best.pt")
+        self.parser.add_argument("--pretrain_type", help="yolo预训练模型类型", dest="pretrain_type", type=str, default="s")
+        self.parser.add_argument("--reid_path", help="reid模型地址", dest="reid_path", type=str, default="/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/reid/logs/Veri776/MBR_4G/0/")
 
     def parse(self):
         return self.parser.parse_args()

@@ -62,15 +62,15 @@ p_rerase: 0.5
 dataset: Veri776 #Veri776
 
 n_classes: 575 #30671 #770
-query_dir: /data2/zhangkun/reid/VeRi/image_query/ #/mnt/DATADISK/Datasets/vehicle/VeRi/image_query/ #
-teste_dir: /data2/zhangkun/reid/VeRi/image_test/  #/mnt/DATADISK/Datasets/vehicle/VeRi/image_test/ #
-train_dir: /data2/zhangkun/reid/VeRi/image_train/ #/mnt/DATADISK/Datasets/vehicle/VeRi/image_train/ #
-query_list_file: /data2/zhangkun/reid/VeRi/name_query.txt
-gallery_list_file: /data2/zhangkun/reid/VeRi/name_test.txt
-train_list_file: /data2/zhangkun/reid/VeRi/name_train.txt
+query_dir: /home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/VeRi/image_query/
+teste_dir: /home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/VeRi/image_test/
+train_dir: /home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/VeRi/image_train/
+query_list_file: /home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/VeRi/name_query.txt
+gallery_list_file: /home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/VeRi/name_test.txt
+train_list_file: /home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/VeRi/name_train.txt
 
-test_keypoint: /data2/zhangkun/project/reid/dataset/VeRi/keypoint_orient_test.txt
-train_keypoint: /data2/zhangkun/project/reid/dataset/VeRi/keypoint_orient_train.txt
+test_keypoint: /home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/VeRi/keypoint_orient_test.txt
+train_keypoint: /home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/VeRi/keypoint_orient_train.txt
 
 ### Define an optimizer settings
 optimizer: Adam #Adam SGD

@@ -26,7 +26,7 @@ from utils.scipy_linear_assignment import linear_assignment
 from utils.general import check_img_size, non_max_suppression, scale_coords
 from utils.utils import letterbox, class_agnostic_nms, pairwise_tracks_dist
 from yolov10.ultralytics import YOLOv10
-
+from ReId import ReId
 
 class Cluster:
     def __init__(self):
@@ -54,83 +54,55 @@ class Cluster:
     def cam_list(self):
         return [track.cam for track in self.tracks]
 
-
 def prepare_align(cams, f_nums):
     temp_align = {}
     for cam in cams:
         temp_align[cam] = {}
         for i in range(0, np.max(f_nums) + 1):
             # Default
-            temp_align[cam][i] = 0
+            # temp_align[cam][i] = 0
             # temp_align[cam][i] = i + 1
             # continue
             # Set for each camera
-            if cam == 'c006':
-                temp_align[cam][i] = i
-
-            elif cam == 'c007':
-                if i <= 1037:
-                    temp_align[cam][i] = i + 1
-                elif 1040 <= i <= 1309:
-                    temp_align[cam][i] = i - 1
-                elif 1320 <= i <= 1339:
-                    temp_align[cam][i] = i - 11
-                elif 1350 <= i <= 1379:
-                    temp_align[cam][i] = i - 21
-                elif 1400 <= i <= 1449:
-                    temp_align[cam][i] = i - 41
-                elif 1460 <= i <= 1499:
-                    temp_align[cam][i] = i - 51
-                elif 1510 <= i <= 1537:
-                    temp_align[cam][i] = i - 61
-                elif 1540 <= i <= 1542:
-                    temp_align[cam][i] = i - 63
-                elif 1560 <= i <= 1609:
-                    temp_align[cam][i] = i - 80
-                elif 1620 <= i <= 1639:
-                    temp_align[cam][i] = i - 90
-                elif 1650 <= i <= 1864:
-                    temp_align[cam][i] = i - 100
-                elif 1870 <= i <= 1893:
-                    temp_align[cam][i] = i - 105
-                elif 1901 <= i <= 1920:
-                    temp_align[cam][i] = i - 112
-                elif 1927 <= i <= 1933:
-                    temp_align[cam][i] = i - 118
-                elif 1940 <= i <= 1989:
-                    temp_align[cam][i] = i - 124
-                elif 2000 <= i <= 2049:
-                    temp_align[cam][i] = i - 134
-                elif 2060 <= i:
-                    temp_align[cam][i] = i - 144
-
-            elif cam == 'c008':
-                if 7 <= i <= 421:
-                    temp_align[cam][i] = i - 6
-                elif 439 <= i <= 472:
-                    temp_align[cam][i] = i - 23
-                elif 479 <= i <= 548:
-                    temp_align[cam][i] = i - 29
-                elif 603 <= i <= 685:
-                    temp_align[cam][i] = i - 83
-                elif 728 <= i <= 925:
-                    temp_align[cam][i] = i - 125
-                elif 934 <= i <= 1397:
-                    temp_align[cam][i] = i - 133
-                elif 1401 <= i <= 1612:
-                    temp_align[cam][i] = i - 136
-                elif 1621 <= i <= 1752:
-                    temp_align[cam][i] = i - 144
-                elif 1763 <= i <= 1920:
-                    temp_align[cam][i] = i - 154
-                elif 1958 <= i:
-                    temp_align[cam][i] = i - 191
-
-            elif cam == 'c009':
-                temp_align[cam][i] = i - 9
-            else:
-                temp_align[cam][i] = i
+            temp_align[cam][i] = i
     return temp_align
+# def prepare_align(cams, f_nums):
+#     temp_align = {}
+#     reference_frame = 207  # 摄像头 41 在 15:30:00 时的帧数
+#     # 定义每个摄像头在 15:30:00 时的帧数
+#     sync_frames = {
+#         '41': 109,
+#         '42': 79,
+#         '43': 77,
+#         '44': 207,
+#         '45': 119,
+#         '46': 118
+#     }
+#     # 定义每个摄像头视频的帧数量
+#     all_frames = {
+#         '41': 2341,
+#         '42': 2378,
+#         '43': 2530,
+#         '44': 2703,
+#         '45': 2694,
+#         '46': 2863
+#     }
+#     i=0
+#     for cam in cams:
+#         offset = sync_frames[cam] - reference_frame
+#         f_nums[i] += abs(offset)
+#         i+=1
+#     for cam in cams:
+#         temp_align[cam] = {}
+#         offset = sync_frames[cam] - reference_frame
+#         for i in range(0, np.max(f_nums) + 1):
+#             # 对齐帧，使所有摄像头在 15:30:00 时的帧号都为 109
+#             aligned_frame = i + offset
+            
+#             # 确保对齐后的帧号不小于 0
+#             temp_align[cam][i] = aligned_frame
+        
+#     return temp_align
 
 
 class MTMCT(object):
@@ -161,15 +133,19 @@ class MTMCT(object):
         # For feature extraction model
         self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
+        # 添加 lane_img 成员变量
+        self.lane_img = self.load_lane_images()
         # Prepare ========================================================================================================
         # Prepare output folder
         self.output_dir = opt.output_dir
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
         self.result_path = self.output_dir + f'{mtmct_version}.txt'
+        self.debug_mtmct_pkl = self.output_dir + f'{mtmct_version}/mtmct.pkl'
         # Prepare others
         self.datasets, self.trackers, self.f_nums = {}, {}, []
         self.roi_masks, self.overlap_regions_cam2cam = {}, {}
+        self.img_h, self.img_w = opt.img_ori_size
         for cam in self.cams:
             # Prepare 1
             img_dir = os.path.join(opt.data_dir, cam) + '/frame/*'
@@ -181,9 +157,15 @@ class MTMCT(object):
             self.roi_masks[cam] = cv2.imread('/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real/%s/%s.png' % (cam,cam), cv2.IMREAD_GRAYSCALE)
             self.overlap_regions_cam2cam[cam] = {}
             for cam_ in self.cams:
-                self.overlap_regions_cam2cam[cam][cam_] = cv2.imread(
-                    '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/preliminary/overlap_zones/HST/%s_%s.png' % (cam, cam_),
-                    cv2.IMREAD_GRAYSCALE) if cam_ != cam else None
+                if cam_ == cam:
+                    self.overlap_regions_cam2cam[cam][cam_] = None
+                    continue
+                overlap_file = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/preliminary/overlap_zones/HST/{cam}_{cam_}.png'
+                if os.path.exists(overlap_file):
+                    self.overlap_regions_cam2cam[cam][cam_] = cv2.imread(overlap_file, cv2.IMREAD_GRAYSCALE)
+                else:
+                    # 创建一个与原图像大小相同的全黑图片
+                    self.overlap_regions_cam2cam[cam][cam_] = np.zeros((self.img_h, self.img_w), dtype=np.uint8)
         self.temp_align = prepare_align(self.cams, self.f_nums)
         for tracker in self.trackers.values():
             tracker.temp_align = self.temp_align
@@ -194,12 +176,12 @@ class MTMCT(object):
                     torch.rand((10, 3, opt.patch_size[0], opt.patch_size[1]), device='cuda').half())
 
         # Temporal alignment 时间对齐的序列
-        self.img_h, self.img_w = opt.img_ori_size
         self.next_global_id, self.dunn_index_prev = 0, -1e5
         self.clusters_dict = {}
         self.result = []
         self.result_set = set()
-        self.ReId = ReId('./reid/logs/Veri776/MBR_4G/0/')
+        self.ReId = ReId(opt.reid_path)
+
 
     def run_mtmct(self):
         # Run
@@ -243,7 +225,10 @@ class MTMCT(object):
                     if img is not None:
                         cv2.imwrite(save_path, img)
                 # 跨摄像头跟踪
-            self.mtmct_online(fdx, online_tracks_raw)
+            if 'n' in  opt.version:
+                self.new_mtmct_online(fdx, online_tracks_raw)
+            else:
+                self.mtmct_online(fdx,online_tracks_raw)
         directory = os.path.dirname(self.result_path)
         if not os.path.exists(directory):
             os.makedirs(directory)
@@ -286,25 +271,120 @@ class MTMCT(object):
             batch_img_ori[cdx] = torch.tensor(img_ori.transpose((2, 0, 1)) / 255.0, device='cuda')
         return batch_img, batch_img_ori, valid_cam
     def new_mtmct_online(self, fdx, online_tracks_raw):
-        direction = {
+        """
+
+        Args:
+            fdx: 当前帧id
+            online_tracks_raw: 一个字典,key为camId,value为一个list,包含所有的track轨迹
+
+        Returns:
+
+        """
+        """
+        摄像头拓扑结构说明:
+        - 每个摄像头都与其相邻的摄像头相连
+        - 41和46是端点摄像头,只与一个其他摄像头相连
+        - 其他摄像头(42, 43, 44, 45)都与两个摄像头相连
+        - camera_order定义了摄像头的线性顺序
+        """
+        # 定义摄像头拓扑结构
+        camera_topology = {
             '41': ['42'],
-            '42': ['43'],
-            '43': ['44'],
-            '44': ['45'],
-            '45': ['46'],
-            '46': [],
+            '42': ['41', '43'],
+            '43': ['42', '44'],
+            '44': ['43', '45'],
+            '45': ['44', '46'],
+            '46': ['45']
         }
-        for loc, values in direction.items():
-            loc_tracks = online_tracks_raw[loc]
-            new_online_tracks_raw = {
-                loc: loc_tracks,
-            }
-            if len(values) == 0:
-                continue
-            for target in values:
-                new_online_tracks_raw[target] = online_tracks_raw[target]
-            self.mtmct_online(fdx, new_online_tracks_raw)
+        from datetime import datetime, timedelta
+        # ��义摄像头时间同步信息
+        camera_sync = {
+            '41': {'frame': 109, 'time': datetime.strptime('15:30:00', '%H:%M:%S')},
+            '42': {'frame': 79, 'time': datetime.strptime('15:30:00', '%H:%M:%S')},
+            '43': {'frame': 77, 'time': datetime.strptime('15:30:00', '%H:%M:%S')},
+            '44': {'frame': 207, 'time': datetime.strptime('15:30:00', '%H:%M:%S')},
+            '45': {'frame': 119, 'time': datetime.strptime('15:30:00', '%H:%M:%S')},
+            '46': {'frame': 118, 'time': datetime.strptime('15:30:00', '%H:%M:%S')}
+        }
+        camera_order = ['41', '42', '43', '44', '45', '46']
+        start = time.time()
+        # 过滤原始跟踪结果,去除不符合条件的跟踪
+        target_tracks = {}
+        for cam,tracker in self.trackers.items():
+            target_tracks[cam] = tracker.tracked
+        online_tracks_filtered = self.filter_online_tracks(online_tracks_raw)
+
+        # 合并所有摄像头的跟踪结果
+        online_tracks = []
+        for cam in self.cams:
+            online_tracks += online_tracks_filtered[cam]
+        
+        
+        for track in online_tracks:
+            index = camera_order.index(track.cam)
+            if index == 0:
+                if track.global_id is None:
+                    # 这里应该赋予新的车辆id
+                    track.global_id = self.next_global_id
+                    self.next_global_id += 1
+            else:
+                if track.global_id is None:
+                    pre_index=index-1
+                    pre_cam=camera_order[pre_index]
+                    # 从online_tracks中找到pre_cam的track
+                    pre_tracks = [t for t in target_tracks[pre_cam] if t.cam == pre_cam]
+                    cur_tracks = [t for t in target_tracks[cam] if t.cam == cam]
+
+                    # 过滤掉一些轨迹
+                    for pre_track in pre_tracks:
+                        if fdx - pre_track.obs_history[-1][0] > opt.max_time_lost:
+                            pre_tracks.remove(pre_track)
+                    # 约束条件有哪些？ 首先必须是前一个摄像头出现的车辆id
+                    online_feats = np.array([track.get_feature(mode=opt.get_feat_mode) for track in pre_tracks])
+                    if len(online_feats) >= 1:
+                        # online_feats 的第一个插入为track的特征
+                        online_feats = np.insert(online_feats, 0, track.get_feature(mode=opt.get_feat_mode), axis=0)
+                        # 计算online_feats之间的距离
+                        p_dists = pdist(online_feats, metric='cosine')
+                        p_dists = np.clip(p_dists, 0, 1)  # 归一化距离到[0,1]区间
+                        #遍历p-dists,遍历online_feats的元素长度-1个
+                        min_dist = float('inf')
+                        best_match = None
+                        for i in range(len(online_feats)-1):
+                            if p_dists[i] <= opt.mtmc_match_thr and p_dists[i] < min_dist:
+                                # 检查pre_tracks[i]的global_id是否已经在cur_tracks中出现
+                                if pre_tracks[i].global_id not in [t.global_id for t in cur_tracks if t.global_id is not None]:
+                                    min_dist = p_dists[i]
+                                    best_match = i
+                        if best_match is not None:
+                            track.global_id = pre_tracks[best_match].global_id
+                if track.global_id is None:
+                    track.global_id = self.next_global_id
+                    self.next_global_id += 1
+        self.record_result(fdx, online_tracks)
         pass
+
+    def record_result(self, fdx, online_tracks_raw):
+        # 记录结果
+        for track in online_tracks_raw:
+            left, top, w, h = track.tlwh
+
+            # 扩展边界框,因为gt边界框并不是紧密地围绕对象,而是比对象大得多
+            cx, cy = left + w / 2, top + h / 2
+            # w, h = w * 1.45, h * 1.45
+            left, top = cx - w / 2, cy - h / 2
+
+            # 根据大小过滤,因为gt不包括小边界框
+            # if w * h / self.img_w / self.img_h < 0.003 or 0.3 < w * h / self.img_w / self.img_h:
+            #     continue
+            format = '%d %d %d %d %d %d %d -1 -1' % (
+                int(track.cam[-2:]), track.global_id, self.temp_align[track.cam][fdx], int(left), int(top),
+                int(w),
+                int(h))
+            if format not in self.result_set:
+                self.result.append(format)
+                self.result_set.add(format)
+
     def mtmct_online(self, fdx, online_tracks_raw):
         start = time.time()
         # 过滤原始跟踪结果,去除不符合条件的跟踪
@@ -417,24 +497,7 @@ class MTMCT(object):
 
         self.total_times['MTMC'] += time.time() - start
 
-        # 记录结果
-        for track in online_tracks:
-            left, top, w, h = track.tlwh
-
-            # 扩展边界框,因为gt边界框并不是紧密地围绕对象,而是比对象大得多
-            cx, cy = left + w / 2, top + h / 2
-            # w, h = w * 1.45, h * 1.45
-            left, top = cx - w / 2, cy - h / 2
-
-            # 根据大小过滤,因为gt不包括小边界框
-            # if w * h / self.img_w / self.img_h < 0.003 or 0.3 < w * h / self.img_w / self.img_h:
-            #     continue
-            format = '%d %d %d %d %d %d %d -1 -1' % (
-                int(track.cam[-2:]), track.global_id, self.temp_align[track.cam][fdx], int(left), int(top), int(w),
-                int(h))
-            if format not in  self.result_set:
-                self.result.append(format)
-                self.result_set.add(format)
+        self.record_result(fdx, online_tracks)
 
     def filter_tracks_by_overlap(self, online_tracks, p_dists):
         for i in range(len(online_tracks)):
@@ -452,7 +515,8 @@ class MTMCT(object):
                 overlap_region = self.overlap_regions_cam2cam[online_tracks[i].cam][online_tracks[j].cam]
                 x1, y1, x2, y2 = online_tracks[i].x1y1x2y2.astype(np.int32)
                 y2 = y2 if y2 < 1080 else 1079
-                if overlap_region[y2, (x1 + x2) // 2] == 0:
+                o1 = overlap_region[y2, (x1 + x2) // 2]
+                if o1 == 0:
                     p_dists[idx] = 10
                     continue
 
@@ -460,7 +524,8 @@ class MTMCT(object):
                 overlap_region = self.overlap_regions_cam2cam[online_tracks[j].cam][online_tracks[i].cam]
                 x1, y1, x2, y2 = online_tracks[j].x1y1x2y2.astype(np.int32)
                 y2 = y2 if y2 < 1080 else 1079
-                if overlap_region[y2, (x1 + x2) // 2] == 0:
+                o2 = overlap_region[y2, (x1 + x2) // 2]
+                if o2 == 0:
                     p_dists[idx] = 10
                     continue
 
@@ -503,7 +568,7 @@ class MTMCT(object):
         start = time.time()
         online_tracks_raw = {}
         for cam in self.cams:
-            online_tracks_raw[cam] = self.trackers[cam].update(cam, detection[cam], feat[cam], self.temp_align)
+            online_tracks_raw[cam] = self.trackers[cam].update(cam, detection[cam], feat[cam], self.temp_align,self.lane_images[cam])
         self.total_times['MTSC'] += time.time() - start
         return online_tracks_raw
 
@@ -555,12 +620,12 @@ class MTMCT(object):
                 feat[cam] = np.zeros((0, 2048))
             return feat , detection
         # Extract features
-        with torch.autocast('cuda'):
-            batch_patch = batch_patch[:det_count]
-            batch_feat = self.feat_ext_model(batch_patch)
+        # with torch.autocast('cuda'):
+        batch_patch = batch_patch[:det_count]
+            # batch_feat = self.feat_ext_model(batch_patch)
         new_batch_feat = self.ReId.reid(batch_patch)
         new_batch_feat = new_batch_feat.squeeze().cpu().numpy()
-        batch_feat = batch_feat.squeeze().cpu().numpy()
+        batch_feat = new_batch_feat
         # 当batch_feat为一维的时候，给它改成二维
         if batch_feat.ndim == 1:
             batch_feat = batch_feat[np.newaxis, :]
@@ -580,7 +645,7 @@ class MTMCT(object):
         # Detect =====================================================================================================
         # with torch.autocast('cuda'):
         #     preds = self.det_model(batch_img[list(valid_cam.values())], augment=opt.augment)[0]
-        # # NMS之后是最终的检测结果
+        # # NMS之后是最终的检��结果
         # preds = non_max_suppression(preds, opt.conf_thres, opt.iou_thres,
         #                             classes=opt.classes, agnostic=opt.agnostic_nms)
         # for cam_index, cam in enumerate(self.cams):
@@ -631,13 +696,13 @@ class MTMCT(object):
     def debug_finished(self):
         with open(finished_txt, 'w') as output_file:
             for online_track in self.trackers.values():
-                for track in online_track.finished:
+                for track in online_track.all_tracks:
                     for info in track.obs_history:
                         left, top, w, h = caculate_tlwh(info[1])
 
                         # Expand box, Since gt boxes are not tightly annotated around objects and quite larger than objects
                         cx, cy = left + w / 2, top + h / 2
-                        w, h = w * 1.45, h * 1.45
+                        # w, h = w * 1.45, h * 1.45
                         left, top = cx - w / 2, cy - h / 2
 
                         if left < 0 or top < 0:
@@ -650,8 +715,27 @@ class MTMCT(object):
                             continue
                         print(
                             '%d %d %d %d %d %d %d -1 -1' % (
-                                int(track.cam[-1]), track.global_id, self.temp_align[track.cam][info[0]],
+                                int(track.cam[-2:]), track.global_id, self.temp_align[track.cam][info[0]],
                                 int(left), int(top), int(w), int(h)), file=output_file)
+
+    def cleanup_for_pickle(self):
+        # 删除 ReId 属性
+        if hasattr(self, 'ReId'):
+            del self.ReId
+        if hasattr(self, 'YOLOv10_detect_model'):
+            del self.YOLOv10_detect_model
+
+    def restore_after_pickle(self):
+        # 如果有保存的路径，重新加载 ReId 模型
+        if hasattr(self, 'reid_model_path') and self.reid_model_path:
+            self.ReId = ReId(self.reid_model_path)
+
+    def load_lane_images(self):
+        lane_images = {}
+        for cam in self.cams:
+            image_path = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/preliminary/devied_zones/{cam}.png'
+            lane_images[cam] = cv2.imread(image_path)
+        return lane_images
 
 
 def caculate_tlwh(cxcywh):
@@ -666,8 +750,14 @@ def run():
     mtmct = MTMCT(opt)
     with torch.no_grad():
         mtmct.run_mtmct()
-    # with open(outputs_mtmct_pkl, 'wb') as f:
-    #     pickle.dump(mtmct, f)
+    if not os.path.exists(mtmct.debug_mtmct_pkl):
+        os.makedirs(os.path.dirname(mtmct.debug_mtmct_pkl), exist_ok=True)
+    
+    # 在保存之前清理 ReID 模型
+    mtmct.cleanup_for_pickle()
+    
+    with open(mtmct.debug_mtmct_pkl, 'wb') as f:
+        pickle.dump(mtmct, f)
     return mtmct
 
 
@@ -677,7 +767,7 @@ def read_pkl_from_file(outputs_mtmct_pkl):
     return mtmct
 
 
-finished_txt = 'outputs/result/finished.txt'
+finished_txt = 'debug.txt'
 result_dir = 'results'
 
 
@@ -685,17 +775,17 @@ def debug():
     from tracking import matching
     from scipy.spatial.distance import cdist
 
-    mtmct = read_pkl_from_file(outputs_mtmct_pkl)
-    # mtmct.debug_finished()
-    track14 = mtmct.trackers['c008'].finished[60]
-    reid14 = track14.obs_history[-1][3]
-    track94 = mtmct.trackers['c008'].finished[65]
-    reid94 = track94.obs_history[0][3]
-    reid_dis = cdist([reid14], [reid94], 'cosine')
-    reid_dis = reid_dis[0][0]
-    print(reid_dis)
+    mtmct = read_pkl_from_file(opt.output_dir+outputs_mtmct_pkl)
+    mtmct.debug_finished()
+    # track14 = mtmct.trackers['c008'].finished[60]
+    # reid14 = track14.obs_history[-1][3]
+    # track94 = mtmct.trackers['c008'].finished[65]
+    # reid94 = track94.obs_history[0][3]
+    # reid_dis = cdist([reid14], [reid94], 'cosine')
+    # reid_dis = reid_dis[0][0]
+    # print(reid_dis)
     # calculate_results('outputs/ground_truth_validation.txt', finished_txt)
-
+    pass
 
 def main():
     mtmct = run()
@@ -721,7 +811,7 @@ if __name__ == '__main__':
         # 训练模型
         epochs = opt.epoch
         batch = opt.batch
-        # 生成一个六位的随机数
+        # 生成一个六的随机数
         random_suffix = random.randint(100000, 999999)
         save_path = f'UA-DETRAC_pre/model_name_{pre_model_name_last}/epochs_{epochs}/batch_{batch}/{random_suffix}'
         results = model.train(data=data_yaml_path,
@@ -739,6 +829,9 @@ if __name__ == '__main__':
     else:
         draw_debug_image = False
         mtmct_version = f'version/v{opt.version}'
-        outputs_mtmct_pkl = 'outputs/mtmct.pkl'
+        outputs_mtmct_pkl = f'{mtmct_version}/mtmct.pkl'
         main()
         # debug()
+
+
+
