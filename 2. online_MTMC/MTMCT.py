@@ -196,7 +196,7 @@ class MTMCT(object):
 
             # REID
             feat, detection = self.reid(batch_img, batch_img_ori, preds)
-            # detection是dict value均为ndarray类型 shape=(x,5) x对应检测到的车辆的数量 5分别是bbox，置信度
+            # detection是dict value均为ndarray类型 shape=(x,5) x对应检测到的车���的数量 5分别是bbox，置信度
             # feat是dict value均为ndarray类型 shape=(x,2048) 2048是向量
             # 单摄像头跟踪
             online_tracks_raw = self.MTSCT_online(feat, detection)
@@ -208,7 +208,7 @@ class MTMCT(object):
                 for det in detection:
                     # 初始化视频写入器
                     if det not in video_writers:
-                        video_path = os.path.join(output_path, det, f'{det}.mp4')
+                        video_path = os.path.join(output_path, f'{det}.mp4')
                         if not os.path.exists(os.path.dirname(video_path)):
                             os.makedirs(os.path.dirname(video_path))
                         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
@@ -261,25 +261,29 @@ class MTMCT(object):
         """
         准备图像数据
         """
-        # Generate empty batches
-        batch_img = torch.zeros((len(self.cams), 3, self.img_size[0], self.img_size[1]), device='cuda')
-        batch_img_ori = torch.zeros((len(self.cams), 3, opt.img_ori_size[0], opt.img_ori_size[1]),
-                                    device='cuda')
-        # 准备图像数据
+        batch_img = []
+        batch_img_ori = []
         valid_cam = {}
-        for cdx, cam in enumerate(self.cams):
-            # Read
+        
+        for cam in self.cams:
             valid_cam[cam] = True
             temp_align_cam_fdx_ = self.temp_align[cam][fdx]
-            path, img, img_ori, _ = self.datasets[cam].__next__(cam, temp_align_cam_fdx_)
-            # Check 这里检查是否有这样的图片存在文件夹中，如果没有则跳过然后到下一个摄像头中
+            base_path = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real/'
+            
+            img_ori_path = os.path.join(base_path, cam, f'{cam}.png')
+            img_path = os.path.join(base_path, cam, 'frame', f'{cam}_f{fdx+1:04d}.jpg')
+            
+            img = cv2.imread(img_path)
+            img_ori = cv2.imread(img_ori_path)
+            
             if img is None:
                 valid_cam[cam] = False
                 continue
-
-            # Store 把读取到的图片存到batch_img中并且序列化
-            batch_img[cdx] = torch.tensor(img / 255.0, device='cuda')
-            batch_img_ori[cdx] = torch.tensor(img_ori.transpose((2, 0, 1)) / 255.0, device='cuda')
+            
+            # 添加OpenCV读取的图像到列表中
+            batch_img.append(img)
+            batch_img_ori.append(img_ori)
+        
         return batch_img, batch_img_ori, valid_cam
     def new_mtmct_online(self, fdx, online_tracks_raw):
         """
@@ -584,6 +588,13 @@ class MTMCT(object):
 
     def reid(self, batch_img, batch_img_ori, preds):
         self.start = time.time()
+        # 创建新的转置数组，而不修改原始数组
+        transposed_batch_img = np.transpose(batch_img, (0, 3, 1, 2))
+        transposed_batch_img_ori = np.transpose(batch_img_ori, (0, 3, 1, 2))
+
+        # 然后转换为 CUDA 张量
+        tensor_batch_img = torch.from_numpy(transposed_batch_img).cuda().half()
+        tensor_batch_img_ori = torch.from_numpy(transposed_batch_img_ori).cuda().half()
         batch_patch = torch.zeros((100 * len(self.cams), 3, opt.patch_size[0], opt.patch_size[1]), device='cuda').half()
         det_count, detection = 0, {}
         for pdx, pred in enumerate(preds):
@@ -594,7 +605,7 @@ class MTMCT(object):
             if len(pred) > 0:
                 # Rescale boxes from img_size to im0s size
                 debug_pred = pred[:, :4]
-                pred[:, :4] = scale_coords(batch_img.shape[2:], pred[:, :4], batch_img_ori.shape[2:4])
+                pred[:, :4] = scale_coords(tensor_batch_img.shape[2:], pred[:, :4], tensor_batch_img_ori.shape[2:4])
                 debug_pred = pred[:, :4]
                 # Post-process detections xyxy应该分别是bbox的左上角和右下角的横纵坐标？
                 for *xyxy, conf, _ in reversed(pred):
@@ -618,7 +629,7 @@ class MTMCT(object):
                     detection[self.cams[pdx]] = np.concatenate([detection[self.cams[pdx]], new_box], axis=0)
 
                     # Get patch
-                    patch = batch_img_ori[pdx][:, max(y1, 0):min(y2 + 1, self.img_h),
+                    patch = tensor_batch_img[pdx][:, max(y1, 0):min(y2 + 1, self.img_h),
                             max(x1, 0):min(x2 + 1, self.img_w)]
                     patch = self.normalize(letterbox(patch))
                     # 如果是c008则水平翻转
@@ -661,22 +672,23 @@ class MTMCT(object):
         # for cam_index, cam in enumerate(self.cams):
         #     if not valid_cam[cam]:
         #         preds.insert(cam_index, torch.zeros((0, 6)).cuda().half())
-        preds_result = []
-        for single_img in batch_img:
-            # 确保single_img是一个4D张量 [1, C, H, W]
-            if single_img.ndim == 3:
-                single_img = single_img.unsqueeze(0)
-            
-            # 对单个图像进行预测
-            single_pred = self.YOLOv10_detect_model(single_img)
-            
-            # 将单个预测结果添加到列表中
-            preds_result.append(single_pred)
+        # preds_result = []
+        # for single_img in batch_img:
+        #     # 确保single_img是一个4D张量 [1, C, H, W]
+        #     if single_img.ndim == 3:
+        #         single_img = single_img.unsqueeze(0)
+        #
+        #     # 对单个图像进行预测
+        #     single_pred = self.YOLOv10_detect_model(single_img)
+        #
+        #     # 将单个预测结果添加到列表中
+        #     preds_result.append(single_pred)
+        preds_result = self.YOLOv10_detect_model(batch_img)
 
         # 如果需要,可以将preds_result组合成一个批量结果
         # 具体的组合方式取决于YOLOv10_detect_model的输出格式
         # 这里假设输出是一个列表,每个元素对应一张图像的预测结果
-        preds_result = [item for sublist in preds_result for item in sublist]
+        # preds_result = [item for sublist in preds_result for item in sublist]
 
         ans = []
         for result in preds_result:
@@ -876,11 +888,12 @@ if __name__ == '__main__':
             pickle.dump(mtmct, f)
         calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
     else:
-        # draw_debug_image = False
+        draw_debug_image = False
         mtmct_version = f'version/v{opt.version}'
         outputs_mtmct_pkl = f'{mtmct_version}/mtmct.pkl'
         main()
         # debug()
+
 
 
 
