@@ -125,8 +125,8 @@ class MTMCT(object):
         self.stride = 32
         # self.stride = int(self.det_model.stride.max())
         self.img_size = opt.img_size.copy()
-        self.img_size[0] = check_img_size(opt.img_size[0], s=self.stride)
-        self.img_size[1] = check_img_size(opt.img_size[1], s=self.stride)
+        # self.img_size[0] = check_img_size(opt.img_size[0], s=self.stride)
+        # self.img_size[1] = check_img_size(opt.img_size[1], s=self.stride)
         # Load feature extraction model
         feat_ext_model = FeatureExtractor(opt.feat_ext_name, opt.avg_type, opt.feat_ext_weights)
         self.feat_ext_model = feat_ext_model.cuda().eval().half()
@@ -182,12 +182,26 @@ class MTMCT(object):
         self.result_set = set()
         self.ReId = ReId(opt.reid_path)
 
+        # 加载并存储背景图像
+        self.background_images = self.load_background_images()
+
+    def load_background_images(self):
+        background_images = {}
+        base_path = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real/'
+        for cam in self.cams:
+            img_ori_path = os.path.join(base_path, cam, f'{cam}.png')
+            if os.path.exists(img_ori_path):
+                background_images[cam] = cv2.imread(img_ori_path)
+            else:
+                raise ValueError(f'图像{img_ori_path}不存在')
+        return background_images
+
     def run_mtmct(self):
         # 初始化视频写入器字典
         video_writers = {}
         
         # Run
-        for fdx in tqdm(range(0, np.max(self.f_nums) + 1)):
+        for fdx in tqdm(range(0, np.max(self.f_nums))):
             # 准备图像数据
             batch_img, batch_img_ori, valid_cam = self.generate_image_info(fdx)
 
@@ -202,7 +216,7 @@ class MTMCT(object):
             online_tracks_raw = self.MTSCT_online(feat, detection)
             # detection是一个dict，key是摄像头，value是检测结果，是一个list，每个元素是一个五维数组，分别是 左上角xy和长宽 置信度
             # 根据detection把bbox绘制到图片中
-            if draw_debug_image:
+            if opt.draw_debug:
                 base_path = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real'
                 output_path = './output_HST/debug生成视频文件'
                 for det in detection:
@@ -270,21 +284,22 @@ class MTMCT(object):
             temp_align_cam_fdx_ = self.temp_align[cam][fdx]
             base_path = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real/'
             
-            img_ori_path = os.path.join(base_path, cam, f'{cam}.png')
             img_path = os.path.join(base_path, cam, 'frame', f'{cam}_f{fdx+1:04d}.jpg')
-            
-            img = cv2.imread(img_path)
-            img_ori = cv2.imread(img_ori_path)
-            
-            if img is None:
+            if os.path.exists(img_path):
+                img = cv2.imread(img_path)
+            else:
                 valid_cam[cam] = False
+                batch_img.append(np.zeros((self.img_size[0], self.img_size[1], 3), dtype=np.uint8))
                 continue
-            
+
+            # 使用预加载的背景图像
+            img_ori = self.background_images[cam]
+
             # 添加OpenCV读取的图像到列表中
             batch_img.append(img)
             batch_img_ori.append(img_ori)
-        
         return batch_img, batch_img_ori, valid_cam
+
     def new_mtmct_online(self, fdx, online_tracks_raw):
         """
 
@@ -861,7 +876,6 @@ data_yaml_path = './yolov10/datasets/multi_class/data.yaml'
 # 预训练模型
 
 if __name__ == '__main__':
-    draw_debug_image = True
     if opt.train:
         pretrain_type = opt.pretrain_type
         pre_model_name = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/yolov10/models/yolov10{pretrain_type}.pt'
@@ -888,7 +902,6 @@ if __name__ == '__main__':
             pickle.dump(mtmct, f)
         calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
     else:
-        draw_debug_image = False
         mtmct_version = f'version/v{opt.version}'
         outputs_mtmct_pkl = f'{mtmct_version}/mtmct.pkl'
         main()
