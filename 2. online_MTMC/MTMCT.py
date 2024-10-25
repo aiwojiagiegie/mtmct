@@ -182,8 +182,10 @@ class MTMCT(object):
         self.result_set = set()
         self.ReId = ReId(opt.reid_path)
 
-
     def run_mtmct(self):
+        # 初始化视频写入器字典
+        video_writers = {}
+        
         # Run
         for fdx in tqdm(range(0, np.max(self.f_nums) + 1)):
             # 准备图像数据
@@ -200,16 +202,19 @@ class MTMCT(object):
             online_tracks_raw = self.MTSCT_online(feat, detection)
             # detection是一个dict，key是摄像头，value是检测结果，是一个list，每个元素是一个五维数组，分别是 左上角xy和长宽 置信度
             # 根据detection把bbox绘制到图片中
-            if draw_debug_image :
-                base_path='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real'
-                output_path ='./output_HST/逐帧目标检测'
+            if draw_debug_image:
+                base_path = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real'
+                output_path = './output_HST/debug生成视频文件'
                 for det in detection:
-                    # img_path 最后的路径类似于'det_f00001.jpg','det_f00002.jpg','det_f00003.jpg'
+                    # 初始化视频写入器
+                    if det not in video_writers:
+                        video_path = os.path.join(output_path, det, f'{det}.mp4')
+                        if not os.path.exists(os.path.dirname(video_path)):
+                            os.makedirs(os.path.dirname(video_path))
+                        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                        video_writers[det] = cv2.VideoWriter(video_path, fourcc, 30, (self.img_w, self.img_h))
+                    
                     img_path = os.path.join(base_path, det, 'frame', f'{det}_f{fdx+1:04d}.jpg')
-                    save_path = os.path.join(output_path, det, 'MTMCT中对图片进行debug', f'{det}_f{fdx+1:04d}.jpg')
-                    # 判断save路径的父目录存不存在
-                    if not os.path.exists(os.path.dirname(save_path)):
-                        os.makedirs(os.path.dirname(save_path))
                     img = cv2.imread(img_path)
                     for box in detection[det]:
                         # 左上角xy和长宽 置信度
@@ -223,12 +228,18 @@ class MTMCT(object):
                         # 添加标签
                         cv2.putText(img, f'{conf:.2f}', (left, top - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
                     if img is not None:
-                        cv2.imwrite(save_path, img)
-                # 跨摄像头跟踪
-            if 'n' in  opt.version:
+                        video_writers[det].write(img)
+
+            # 跨摄像头跟踪
+            if 'n' in opt.version:
                 self.new_mtmct_online(fdx, online_tracks_raw)
             else:
-                self.mtmct_online(fdx,online_tracks_raw)
+                self.mtmct_online(fdx, online_tracks_raw)
+
+        # 释放视频写入器
+        for writer in video_writers.values():
+            writer.release()
+
         directory = os.path.dirname(self.result_path)
         if not os.path.exists(directory):
             os.makedirs(directory)
@@ -838,7 +849,7 @@ data_yaml_path = './yolov10/datasets/multi_class/data.yaml'
 # 预训练模型
 
 if __name__ == '__main__':
-    draw_debug_image = False
+    draw_debug_image = True
     if opt.train:
         pretrain_type = opt.pretrain_type
         pre_model_name = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/yolov10/models/yolov10{pretrain_type}.pt'
@@ -865,11 +876,12 @@ if __name__ == '__main__':
             pickle.dump(mtmct, f)
         calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
     else:
-        draw_debug_image = False
+        # draw_debug_image = False
         mtmct_version = f'version/v{opt.version}'
         outputs_mtmct_pkl = f'{mtmct_version}/mtmct.pkl'
         main()
         # debug()
+
 
 
 
