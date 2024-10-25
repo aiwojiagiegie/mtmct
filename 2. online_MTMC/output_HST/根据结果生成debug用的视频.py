@@ -170,8 +170,6 @@ def draw_bboxes_all_in(video_path, bbox_data_gt, bbox_data_pred, output_path, ca
         ret, frame = cap.read()
         if not ret:
             break
-        frame_number += 1
-
         # 检查当前帧是否有bbox数据
         if frame_number in bbox_data_gt:
             for bbox in bbox_data_gt[frame_number]:
@@ -192,6 +190,7 @@ def draw_bboxes_all_in(video_path, bbox_data_gt, bbox_data_pred, output_path, ca
         # 将帧写入输出视频
         out.write(frame)
         progress_bar.update(1)
+        frame_number += 1
 
     # 释放资源
     cap.release()
@@ -421,7 +420,7 @@ def compress_video(video_path):
 
 
 if __name__ == '__main__':
-    # opt.version=25
+    opt.version='n16'
     version = 'v'+str(opt.version)
     detection_path = f'result/version/{version}.txt'
     gt_path = 'test_gt.txt'

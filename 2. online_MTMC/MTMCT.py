@@ -183,7 +183,19 @@ class MTMCT(object):
         self.ReId = ReId(opt.reid_path)
 
         # 加载并存储背景图像
-        self.background_images = self.load_background_images()
+        # self.background_images = self.load_background_images()
+        # self.background_images = np.transpose(self.background_images, (0, 3, 1, 2))
+        # self.background_images = torch.from_numpy(self.background_images).cuda().half()
+
+        # 初始化视频捕获对象和当前帧计数器
+        self.video_captures = {}
+        self.current_frame = {}
+        self.total_frames = {}  # 新增：存储每个摄像头的总帧数
+        for cam in self.cams:
+            video_path = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real/{cam}/{cam}.mp4'
+            self.video_captures[cam] = cv2.VideoCapture(video_path)
+            self.current_frame[cam] = 0
+            self.total_frames[cam] = int(self.video_captures[cam].get(cv2.CAP_PROP_FRAME_COUNT))  # 获取总帧数
 
     def load_background_images(self):
         background_images = {}
@@ -203,46 +215,47 @@ class MTMCT(object):
         # Run
         for fdx in tqdm(range(0, np.max(self.f_nums))):
             # 准备图像数据
-            batch_img, batch_img_ori, valid_cam = self.generate_image_info(fdx)
+            batch_img, valid_cam = self.generate_image_info(fdx)
 
             # 目标检测
             preds = self.detect(batch_img, valid_cam)
 
             # REID
-            feat, detection = self.reid(batch_img, batch_img_ori, preds)
-            # detection是dict value均为ndarray类型 shape=(x,5) x对应检测到的车���的数量 5分别是bbox，置信度
-            # feat是dict value均为ndarray类型 shape=(x,2048) 2048是向量
+            feat, detection = self.reid(batch_img, preds)
+
             # 单摄像头跟踪
             online_tracks_raw = self.MTSCT_online(feat, detection)
-            # detection是一个dict，key是摄像头，value是检测结果，是一个list，每个元素是一个五维数组，分别是 左上角xy和长宽 置信度
+
             # 根据detection把bbox绘制到图片中
             if opt.draw_debug:
                 base_path = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real'
-                output_path = './output_HST/debug生成视频文件'
-                for det in detection:
-                    # 初始化视频写入器
-                    if det not in video_writers:
-                        video_path = os.path.join(output_path, f'{det}.mp4')
-                        if not os.path.exists(os.path.dirname(video_path)):
-                            os.makedirs(os.path.dirname(video_path))
-                        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                        video_writers[det] = cv2.VideoWriter(video_path, fourcc, 30, (self.img_w, self.img_h))
-                    
-                    img_path = os.path.join(base_path, det, 'frame', f'{det}_f{fdx+1:04d}.jpg')
-                    img = cv2.imread(img_path)
-                    for box in detection[det]:
-                        # 左上角xy和长宽 置信度
-                        center_x, center_y, width, height, conf = box
-                        left = int(center_x - width / 2)
-                        top = int(center_y - height / 2)
-                        width = int(width)
-                        height = int(height)
-                        # 绘制边界框
-                        cv2.rectangle(img, (left, top), (left + width, top + height), (0, 255, 0), 2)
-                        # 添加标签
-                        cv2.putText(img, f'{conf:.2f}', (left, top - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-                    if img is not None:
-                        video_writers[det].write(img)
+                output_path = './output_HST/debug生成视频文件2'
+                for idx, det in enumerate(self.cams):
+                    if valid_cam[det]:
+                        # 初始化视频写入器
+                        if det not in video_writers:
+                            video_path = os.path.join(output_path, f'{det}.mp4')
+                            if not os.path.exists(os.path.dirname(video_path)):
+                                os.makedirs(os.path.dirname(video_path))
+                            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                            video_writers[det] = cv2.VideoWriter(video_path, fourcc, 30, (self.img_w, self.img_h))
+                        
+                        
+                        if valid_cam[det]:
+                            img = cv2.resize(batch_img[idx], (self.img_w, self.img_h))
+                            for box in detection[det]:
+                                # 左上角xy和长宽 置信度
+                                center_x, center_y, width, height, conf = box
+                                left = int(center_x - width / 2)
+                                top = int(center_y - height / 2)
+                                width = int(width)
+                                height = int(height)
+                                # 绘制边界框
+                                cv2.rectangle(img, (left, top), (left + width, top + height), (0, 255, 0), 2)
+                                # 添加标签
+                                cv2.putText(img, f'{conf:.2f}', (left, top - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                        
+                            video_writers[det].write(img)
 
             # 跨摄像头跟踪
             if 'n' in opt.version:
@@ -273,32 +286,39 @@ class MTMCT(object):
 
     def generate_image_info(self, fdx):
         """
-        准备图像数据
+        从视频中准备图像数据
         """
         batch_img = []
-        batch_img_ori = []
         valid_cam = {}
-        
+
         for cam in self.cams:
-            valid_cam[cam] = True
-            temp_align_cam_fdx_ = self.temp_align[cam][fdx]
-            base_path = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real/'
-            
-            img_path = os.path.join(base_path, cam, 'frame', f'{cam}_f{fdx+1:04d}.jpg')
-            if os.path.exists(img_path):
-                img = cv2.imread(img_path)
+            cap = self.video_captures[cam]
+
+            # 如果当前帧不是我们需要的帧，进行寻帧操作
+            if fdx != self.current_frame[cam]:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, fdx)
+                self.current_frame[cam] = fdx
+
+            # 读取帧
+            ret, frame = cap.read()
+
+            if ret:
+                img = cv2.resize(frame, (self.img_size[1], self.img_size[0]))
+                batch_img.append(img)
+                valid_cam[cam] = True
+                self.current_frame[cam] += 1
             else:
-                valid_cam[cam] = False
+                # 如果读取失败，使用空白图像并标记为无效
                 batch_img.append(np.zeros((self.img_size[0], self.img_size[1], 3), dtype=np.uint8))
-                continue
+                valid_cam[cam] = False
+                
+                if fdx >= self.total_frames[cam]:
+                    pass
+                    # print(f"警告：尝试读取的帧{fdx}超过了摄像头{cam}的总帧数{self.total_frames[cam]}")
+                else:
+                    print(f"从摄像头{cam}读取帧{fdx}失败")
 
-            # 使用预加载的背景图像
-            img_ori = self.background_images[cam]
-
-            # 添加OpenCV读取的图像到列表中
-            batch_img.append(img)
-            batch_img_ori.append(img_ori)
-        return batch_img, batch_img_ori, valid_cam
+        return batch_img, valid_cam
 
     def new_mtmct_online(self, fdx, online_tracks_raw):
         """
@@ -475,7 +495,7 @@ class MTMCT(object):
                 if online_tracks[tdx].global_id is not None:
                     infos.append([tdx, online_tracks[tdx].global_id])
 
-            # 如果聚类中的某些跟踪已经有全局ID,则为新跟踪分配相同的全局ID
+            # 如果聚类中的某些跟踪已经有全局ID,则为新踪分配相同的全局ID
             if len(infos) > 0:
                 # 分配全局ID,收集跟踪,更新特征
                 for tdx in track_idx:
@@ -601,15 +621,15 @@ class MTMCT(object):
         self.total_times['MTSC'] += time.time() - start
         return online_tracks_raw
 
-    def reid(self, batch_img, batch_img_ori, preds):
+    def reid(self, batch_img, preds):
         self.start = time.time()
         # 创建新的转置数组，而不修改原始数组
         transposed_batch_img = np.transpose(batch_img, (0, 3, 1, 2))
-        transposed_batch_img_ori = np.transpose(batch_img_ori, (0, 3, 1, 2))
+        # transposed_batch_img_ori = np.transpose(batch_img_ori, (0, 3, 1, 2))
 
-        # 然后转换为 CUDA 张量
+        # 然后转换 CUDA 张量
         tensor_batch_img = torch.from_numpy(transposed_batch_img).cuda().half()
-        tensor_batch_img_ori = torch.from_numpy(transposed_batch_img_ori).cuda().half()
+        # tensor_batch_img_ori = torch.from_numpy(self.background_images).cuda().half()
         batch_patch = torch.zeros((100 * len(self.cams), 3, opt.patch_size[0], opt.patch_size[1]), device='cuda').half()
         det_count, detection = 0, {}
         for pdx, pred in enumerate(preds):
@@ -620,7 +640,7 @@ class MTMCT(object):
             if len(pred) > 0:
                 # Rescale boxes from img_size to im0s size
                 debug_pred = pred[:, :4]
-                pred[:, :4] = scale_coords(tensor_batch_img.shape[2:], pred[:, :4], tensor_batch_img_ori.shape[2:4])
+                pred[:, :4] = scale_coords(tensor_batch_img.shape[2:], pred[:, :4], [1080,1920])
                 debug_pred = pred[:, :4]
                 # Post-process detections xyxy应该分别是bbox的左上角和右下角的横纵坐标？
                 for *xyxy, conf, _ in reversed(pred):
@@ -777,6 +797,11 @@ class MTMCT(object):
             del self.ReId
         if hasattr(self, 'YOLOv10_detect_model'):
             del self.YOLOv10_detect_model
+        # 在程序结束时释放视频捕获对象
+        for cap in self.video_captures.values():
+            cap.release()
+        if hasattr(self, 'video_captures'):
+            del self.video_captures
 
     def restore_after_pickle(self):
         # 如果有保存的路径，重新加载 ReId 模型
@@ -799,7 +824,7 @@ class MTMCT(object):
 
         # 计算距离
         dists = cdist([track_feat], candidate_feats, metric='cosine')[0]
-        dists = np.clip(dists, 0, 1)  # 归一化距离到[0,1]区间
+        dists = np.clip(dists, 0, 1)  # 归一化距离[0,1]区间
 
         min_dist = float('inf')
         best_match = None
@@ -906,6 +931,7 @@ if __name__ == '__main__':
         outputs_mtmct_pkl = f'{mtmct_version}/mtmct.pkl'
         main()
         # debug()
+
 
 
 
