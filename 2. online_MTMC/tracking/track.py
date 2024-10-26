@@ -112,7 +112,7 @@ class Track(BaseTrack):
                 tracks[i].mean = mean
                 tracks[i].covariance = cov
 
-    def initiate(self, kalman_filter, frame_id):
+    def initiate(self, kalman_filter, frame_id,lane):
         # Start a new track
         self.track_id = self.next_id()
         self.kalman_filter = kalman_filter
@@ -120,7 +120,7 @@ class Track(BaseTrack):
         # Update, Save
         self.mean, self.covariance = self.kalman_filter.initiate(self.cxcywh)
         self.obs_history = [[frame_id, self.cxcywh.copy(), self.confidence, self.curr_feat.copy(),
-                             self.mean.copy(), self.covariance.copy(), "未知"]]
+                             self.mean.copy(), self.covariance.copy(), lane]]
 
         # Set
         self.frame_id = frame_id

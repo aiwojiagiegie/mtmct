@@ -227,35 +227,7 @@ class MTMCT(object):
             online_tracks_raw = self.MTSCT_online(feat, detection)
 
             # 根据detection把bbox绘制到图片中
-            if opt.draw_debug:
-                base_path = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real'
-                output_path = './output_HST/debug生成视频文件2'
-                for idx, det in enumerate(self.cams):
-                    if valid_cam[det]:
-                        # 初始化视频写入器
-                        if det not in video_writers:
-                            video_path = os.path.join(output_path, f'{det}.mp4')
-                            if not os.path.exists(os.path.dirname(video_path)):
-                                os.makedirs(os.path.dirname(video_path))
-                            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                            video_writers[det] = cv2.VideoWriter(video_path, fourcc, 30, (self.img_w, self.img_h))
-                        
-                        
-                        if valid_cam[det]:
-                            img = cv2.resize(batch_img[idx], (self.img_w, self.img_h))
-                            for box in detection[det]:
-                                # 左上角xy和长宽 置信度
-                                center_x, center_y, width, height, conf = box
-                                left = int(center_x - width / 2)
-                                top = int(center_y - height / 2)
-                                width = int(width)
-                                height = int(height)
-                                # 绘制边界框
-                                cv2.rectangle(img, (left, top), (left + width, top + height), (0, 255, 0), 2)
-                                # 添加标签
-                                cv2.putText(img, f'{conf:.2f}', (left, top - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-                        
-                            video_writers[det].write(img)
+            self.draw_debug_video(batch_img, detection, valid_cam, video_writers)
 
             # 跨摄像头跟踪
             if 'n' in opt.version:
@@ -283,6 +255,37 @@ class MTMCT(object):
             total_t += self.total_times[key] / (np.max(self.f_nums) + 1)
         print('Tracking Time: %05f' % track_t)
         print('Total Time: %05f' % total_t)
+
+    def draw_debug_video(self, batch_img, detection, valid_cam, video_writers):
+        if opt.draw_debug:
+            base_path = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real'
+            output_path = './output_HST/debug生成视频文件2'
+            for idx, det in enumerate(self.cams):
+                if valid_cam[det]:
+                    # 初始化视频写入器
+                    if det not in video_writers:
+                        video_path = os.path.join(output_path, f'{det}.mp4')
+                        if not os.path.exists(os.path.dirname(video_path)):
+                            os.makedirs(os.path.dirname(video_path))
+                        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                        video_writers[det] = cv2.VideoWriter(video_path, fourcc, 30, (self.img_w, self.img_h))
+
+                    if valid_cam[det]:
+                        img = cv2.resize(batch_img[idx], (self.img_w, self.img_h))
+                        for box in detection[det]:
+                            # 左上角xy和长宽 置信度
+                            center_x, center_y, width, height, conf = box
+                            left = int(center_x - width / 2)
+                            top = int(center_y - height / 2)
+                            width = int(width)
+                            height = int(height)
+                            # 绘制边界框
+                            cv2.rectangle(img, (left, top), (left + width, top + height), (0, 255, 0), 2)
+                            # 添加标签
+                            cv2.putText(img, f'{conf:.2f}', (left, top - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0),
+                                        2)
+
+                        video_writers[det].write(img)
 
     def generate_image_info(self, fdx):
         """

@@ -420,9 +420,9 @@ def compress_video(video_path):
 
 
 if __name__ == '__main__':
-    opt.version='n16'
+    opt.version='filtered'
     version = 'v'+str(opt.version)
-    detection_path = f'result/version/{version}.txt'
+    detection_path = f'./测试/pred_filtered.txt'
     gt_path = 'test_gt.txt'
     generate_all_in()
     # generate_depart()

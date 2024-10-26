@@ -97,16 +97,28 @@ def find_adjacent_bbox(all_boxes, target_box):
     return adjacent_index
 
 
-def get_lane(lane_image, x, y):
+def get_lane(lane_image, bbox):
+    # 获取边界框的坐标
+    x, y, w, h = bbox
+    
     # 确保坐标在图像范围内
     height, width = lane_image.shape[:2]
-    x = max(0, min(int(x), width - 1))
-    y = max(0, min(int(y), height - 1))
-
-    color = lane_image[y, x]
-    if color[2] >= 200:  # 红色通道
+    x1 = max(0, min(int(x), width - 1))
+    x2 = max(0, min(int(x + w), width - 1))
+    y = max(0, min(int(y + h), height - 1))  # 使用边界框底部的y坐标
+    
+    # 获取底部一行的所有像素
+    bottom_line = lane_image[y, x1:x2]
+    
+    # 计算红色和蓝色像素的数量
+    red_pixels = np.sum(bottom_line[:, 2] >= 200)
+    blue_pixels = np.sum(bottom_line[:, 0] >= 200)
+    total_pixels = bottom_line.shape[0]
+    
+    # 根据颜色占比判断车道
+    if red_pixels > total_pixels / 2:
         return "右车道"
-    elif color[0] >= 200:  # 蓝色通道
+    elif blue_pixels > total_pixels / 2:
         return "左车道"
     else:
         return "未知"
@@ -221,8 +233,8 @@ class BoTSORT(object):
             det = detections_first[d]
 
             if track.state == TrackState.Tracked:
-                new_lane = get_lane(lane_image, det.cxcywh[0] + det.cxcywh[2]/2, det.cxcywh[1] + det.cxcywh[3]/2)
-                track.update(detections_first[d], self.frame_id,new_lane)
+                new_lane = get_lane(lane_image, det.tlwh)  # 使用tlwh格式的边界框
+                track.update(detections_first[d], self.frame_id, new_lane)
                 
                 activated.append(track)
             else:
@@ -262,8 +274,8 @@ class BoTSORT(object):
             det = detections_second[d]
 
             if track.state == TrackState.Tracked:
-                new_lane = get_lane(lane_image, det.cxcywh[0] + det.cxcywh[2]/2, det.cxcywh[1] + det.cxcywh[3]/2)
-                track.update(det, self.frame_id,new_lane)
+                new_lane = get_lane(lane_image, det.tlwh)
+                track.update(det, self.frame_id, new_lane)
                 track.obs_history[-1][2] = self.opt.det_high_thresh+0.01
                 activated.append(track)
             else:
@@ -295,8 +307,8 @@ class BoTSORT(object):
 
         # Update state
         for t, d in matches:
-            new_lane = get_lane(lane_image, detections_first[d].cxcywh[0] + detections_first[d].cxcywh[2]/2, detections_first[d].cxcywh[1] + detections_first[d].cxcywh[3]/2)
-            unactivated[t].update(detections_first[d], self.frame_id,new_lane)
+            new_lane = get_lane(lane_image, detections_first[d].tlwh)
+            unactivated[t].update(detections_first[d], self.frame_id, new_lane)
             activated.append(unactivated[t])
 
         # Update state
@@ -315,7 +327,8 @@ class BoTSORT(object):
                     continue
 
                 # Initiate new track
-                track.initiate(self.kalman_filter, self.frame_id)
+                new_lane = get_lane(lane_image, track.tlwh)
+                track.initiate(self.kalman_filter, self.frame_id, new_lane)
                 activated.append(track)
 
         # Update state
@@ -347,4 +360,5 @@ class BoTSORT(object):
         self.tracked, self.lost = remove_duplicate_tracks(self.tracked, self.lost)
 
         return self.tracked
+
 

@@ -16,9 +16,6 @@ from PIL import Image
 from collections import defaultdict
 from argparse import ArgumentParser
 import warnings
-import threading
-from prettytable import PrettyTable
-from termcolor import colored
 
 from tqdm import tqdm
 
@@ -281,7 +278,7 @@ def removeOutliersROI(df, dstype='train', roidir='ROIs', cid=None):
             Image stored as a 2-d ndarray.
         """
 
-        imf = os.path.join(roidir, '%02d' % cid, '%02d.png' % cid)
+        imf = os.path.join(roidir, '%02d.png' % cid)
         if not os.path.exists(imf):
             raise ValueError(f"缺少摄像头 %02d 的ROI图像。路径为{imf}" % cid)
         img = Image.open(imf, mode='r').convert('L')  # 转换为灰度图像
@@ -295,7 +292,7 @@ def removeOutliersROI(df, dstype='train', roidir='ROIs', cid=None):
 
         return im
 
-    def isInROI(row, roi, height, width, threshold=0.2):
+    def isInROI(row, roi, height, width, threshold=0.5):
         """检查目标是否主要在ROI内。
 
         参数:
@@ -404,7 +401,7 @@ def eval(test, pred, **kwargs):
     # filter prediction data
     # 根据ROI进行过滤
     pred = removeOutliersROI(pred, dstype=dstype, roidir=roidir)
-    # test = removeOutliersROI(test, dstype=dstype, roidir=roidir)
+    # pred.to_csv("./pred_filtered.txt",index=False,sep='\t',header=None)
     # 过滤掉只出现在一个摄像头中的车辆
     pred = removeOutliersSingleCam(pred)
     # 过滤掉重复出现的数据 根据'CameraId', 'Id', 'FrameId'判断是否重复
@@ -446,31 +443,15 @@ info = {
 }
 
 
-def eval_wrapper(test, pred, mread, dstype, roidir, result):
-    result.append(eval(test, pred, mread=mread, dstype=dstype, roidir=roidir))
 
-def calculate_results(test_path, pred_path, baseline_path='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/result/version/v1.txt', mread=False, dstype='validation', roidir='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real'):
+def calculate_results(test_path, pred_path, mread=False, dstype='validation', roidir='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/preliminary/rois'):
     test = readData(test_path)
     pred = readData(pred_path)
-    baseline = readData(baseline_path)
     try:
-        pred_results = []
-        baseline_results = []
-        threads = []
-        
-        t1 = threading.Thread(target=eval_wrapper, args=(test, pred, mread, dstype, roidir, pred_results))
-        t2 = threading.Thread(target=eval_wrapper, args=(test, baseline, mread, dstype, roidir, baseline_results))
-        
-        threads.append(t1)
-        threads.append(t2)
-        
-        for t in threads:
-            t.start()
-        
-        for t in threads:
-            t.join()
-
-        my_print_result(pred_results[0], baseline_results[0])
+        summary = eval(test, pred, mread=mread, dstype=dstype, roidir=roidir)
+        # 将DataFrame转换为字典列表
+        my_print_result(summary)
+        # print_results(summary, mread=mread)
     except Exception as e:
         if mread:
             print('{"error": "%s"}' % repr(e))
@@ -478,62 +459,44 @@ def calculate_results(test_path, pred_path, baseline_path='/home/chatmindai/proj
             print("Error: %s" % repr(e))
         traceback.print_exc()
 
-def my_print_result(pred_summary, baseline_summary):
-    pred_dict = pred_summary.to_dict(orient='records')[0]
-    baseline_dict = baseline_summary.to_dict(orient='records')[0]
-    
-    # 创建表格
-    table = PrettyTable()
-    table.field_names = ["指标", "预测结果", "baseline结果", "指标解释"]
-    
-    # 定义要优先显示的指标
-    priority_metrics = ['idf1', 'idfp', 'idfn', 'idtp', 'mota']
-    
-    # 定义越低越好的指标
-    lower_better = ['idfp', 'idfn', 'num_misses', 'num_transfer', 'num_ascend', 'num_migrate']
-    
-    def format_value(value, is_better):
-        if isinstance(value, float) and not value.is_integer():
-            formatted = f"{value:.6%}"
-        else:
-            formatted = str(value)
-        color = 'red' if is_better else 'green'
-        return colored(formatted, color)
 
-    # 先添加优先指标
-    for key in priority_metrics:
-        pred_value = pred_dict[key]
-        baseline_value = baseline_dict[key]
-        is_better = pred_value < baseline_value if key in lower_better else pred_value > baseline_value
-        formatted_pred = format_value(pred_value, is_better)
-        formatted_baseline = format_value(baseline_value, not is_better)
-        table.add_row([key, formatted_pred, formatted_baseline, info[key]])
-    
-    # 添加其他指标
-    for key in pred_dict.keys():
-        if key not in priority_metrics:
-            pred_value = pred_dict[key]
-            baseline_value = baseline_dict[key]
-            is_better = pred_value < baseline_value if key in lower_better else pred_value > baseline_value
-            formatted_pred = format_value(pred_value, is_better)
-            formatted_baseline = format_value(baseline_value, not is_better)
-            table.add_row([key, formatted_pred, formatted_baseline, info[key]])
-    
-    # 设置表格样式
-    table.align = "l"
-    table.max_width = 120
-    
-    # 打印表格
-    print(table)
-
+def my_print_result(summary):
+    dict_list = summary.to_dict(orient='records')
+    format_str = "{:<20} {:<12} {}"
+    float_format = "{:<20} {:<12.6%} {}"
+    print(format_str.format("指标", "当前结果", "指标解释"))
+    for record in dict_list:
+        for key, value in record.items():
+            # 计算差值和符号
+            if isinstance(value, float) :
+                if value.is_integer():
+                    print(format_str.format(key,  int(value), info[key]))
+                else:
+                    print(float_format.format(key, value,  info[key]))
+            else:
+                print(format_str.format(key, value,  info[key]))
 if __name__ == '__main__':
-    pred_path = f'result/version/vn17.txt'
-    baseline_path = f'result/version/v1.txt'
-    gt_path = './test_gt.txt'
-    
-    calculate_results(gt_path, pred_path, baseline_path)
+    detection_path = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/result/version/vn17.txt'
+    gt_path = '../test_gt.txt'
+    # detection_path = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/debug_sort/pred_17.txt'
+    # gt_path = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/debug_sort/gt_20.txt'
 
-
-
-
+    # calculate_results('ground_truth_validation.txt', f'ground_truth_validation.txt')
+    calculate_results(gt_path, detection_path)
+    # calculate_results('test_gt.txt','test_pred.txt')
+    # args = get_args();
+    # if not args.data or len(args.data) < 2:
+    #     usage("Incorrect number of arguments. Must provide paths for the test (ground truth) and predicitons.")
+    #
+    # test = readData(args.data[0])
+    # pred = readData(args.data[1])
+    # try:
+    #     summary = eval(test, pred, mread=args.mread, dstype=args.dstype, roidir=args.roidir)
+    #     print_results(summary, mread=args.mread)
+    # except Exception as e:
+    #     if args.mread:
+    #         print('{"error": "%s"}' % repr(e))
+    #     else:
+    #         print("Error: %s" % repr(e))
+    #     traceback.print_exc()
 
