@@ -449,7 +449,7 @@ info = {
 def eval_wrapper(test, pred, mread, dstype, roidir, result):
     result.append(eval(test, pred, mread=mread, dstype=dstype, roidir=roidir))
 
-def calculate_results(test_path, pred_path, baseline_path='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/result/version/v1.txt', mread=False, dstype='validation', roidir='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real'):
+def calculate_results(test_path, pred_path, baseline_path='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/result/version/baseline.txt', mread=False, dstype='validation', roidir='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real'):
     test = readData(test_path)
     pred = readData(pred_path)
     baseline = readData(baseline_path)
@@ -527,8 +527,8 @@ def my_print_result(pred_summary, baseline_summary):
     print(table)
 
 if __name__ == '__main__':
-    pred_path = f'result/version/vn17.txt'
-    baseline_path = f'result/version/v1.txt'
+    pred_path = f'result/version/vn1.txt'
+    baseline_path = f'result/version/baseline.txt'
     gt_path = './test_gt.txt'
     
     calculate_results(gt_path, pred_path, baseline_path)

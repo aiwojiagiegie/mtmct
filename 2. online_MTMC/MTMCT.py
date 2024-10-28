@@ -679,12 +679,13 @@ class MTMCT(object):
                 feat[cam] = np.zeros((0, 2048))
             return feat , detection
         # Extract features
-        # with torch.autocast('cuda'):
-        batch_patch = batch_patch[:det_count]
-            # batch_feat = self.feat_ext_model(batch_patch)
-        new_batch_feat = self.ReId.reid(batch_patch)
-        new_batch_feat = new_batch_feat.squeeze().cpu().numpy()
-        batch_feat = new_batch_feat
+        with torch.autocast('cuda'):
+            batch_patch = batch_patch[:det_count]
+            batch_feat = self.feat_ext_model(batch_patch)
+        
+        # 将batch_feat转换为NumPy数组
+        batch_feat = batch_feat.cpu().numpy()
+        
         # 当batch_feat为一维的时候，给它改成二维
         if batch_feat.ndim == 1:
             batch_feat = batch_feat[np.newaxis, :]

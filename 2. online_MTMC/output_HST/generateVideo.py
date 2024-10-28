@@ -22,7 +22,7 @@ def getData(fpath, names=None, sep='\s+|\t+|,'):
         raise ValueError("Could not read input from %s. Error: %s" % (fpath, repr(e)))
 if __name__ == '__main__':
     gt_path = 'test_gt.txt'
-    # detection_path = 'result/v1.txt'
+    # detection_path = 'result/baseline.txt'
     gt_data = pred_data = getData(gt_path, names)
     max_frameId = gt_data.groupby('CameraId')['FrameId'].max()
     max_frameid_dict = max_frameId.to_dict()
