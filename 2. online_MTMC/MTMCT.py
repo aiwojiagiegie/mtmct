@@ -128,8 +128,11 @@ class MTMCT(object):
         # self.img_size[0] = check_img_size(opt.img_size[0], s=self.stride)
         # self.img_size[1] = check_img_size(opt.img_size[1], s=self.stride)
         # Load feature extraction model
-        feat_ext_model = FeatureExtractor(opt.feat_ext_name, opt.avg_type, opt.feat_ext_weights)
-        self.feat_ext_model = feat_ext_model.cuda().eval().half()
+        if opt.baseline_reid:
+            feat_ext_model = FeatureExtractor(opt.feat_ext_name, opt.avg_type, opt.feat_ext_weights)
+            self.feat_ext_model = feat_ext_model.cuda().eval().half()
+        else:
+            self.ReId = ReId(opt.reid_path)
         # For feature extraction model
         self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
@@ -169,18 +172,17 @@ class MTMCT(object):
         self.temp_align = prepare_align(self.cams, self.f_nums)
         for tracker in self.trackers.values():
             tracker.temp_align = self.temp_align
-        # Warm-up models
-        with torch.autocast('cuda'):
-            for _ in range(10):
-                self.feat_ext_model(
-                    torch.rand((10, 3, opt.patch_size[0], opt.patch_size[1]), device='cuda').half())
+        if opt.baseline_reid:
+            with torch.autocast('cuda'):
+                for _ in range(10):
+                    self.feat_ext_model(
+                        torch.rand((10, 3, opt.patch_size[0], opt.patch_size[1]), device='cuda').half())
 
         # Temporal alignment 时间对齐的序列
         self.next_global_id, self.dunn_index_prev = 0, -1e5
         self.clusters_dict = {}
         self.result = []
         self.result_set = set()
-        self.ReId = ReId(opt.reid_path)
 
         # 加载并存储背景图像
         # self.background_images = self.load_background_images()
@@ -678,13 +680,17 @@ class MTMCT(object):
             for cam in self.cams:
                 feat[cam] = np.zeros((0, 2048))
             return feat , detection
-        # Extract features
-        with torch.autocast('cuda'):
+        # 提取特征
+        if not opt.baseline_reid:
             batch_patch = batch_patch[:det_count]
-            batch_feat = self.feat_ext_model(batch_patch)
-        
-        # 将batch_feat转换为NumPy数组
-        batch_feat = batch_feat.cpu().numpy()
+            batch_feat = self.ReId.reid(batch_patch)
+            batch_feat = batch_feat.squeeze().cpu().numpy()
+        else:
+            with torch.autocast('cuda'):
+                batch_patch = batch_patch[:det_count]
+                batch_feat = self.feat_ext_model(batch_patch)
+            # 将batch_feat转换为NumPy数组
+            batch_feat = batch_feat.cpu().numpy()
         
         # 当batch_feat为一维的时候，给它改成二维
         if batch_feat.ndim == 1:
