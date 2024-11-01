@@ -135,21 +135,39 @@ def class_agnostic_nms_det(detection, feat):
     return detection, feat
 
 
-def pairwise_tracks_dist(clusters_dict, tracks, fdx, metric):
+def pairwise_tracks_dist(clusters_dict, tracks, fdx, metric , opt):
+    camera_topology = {
+        '41': [],
+        '42': ['41'],
+        '43': ['42'],
+        '44': ['43'],
+        '45': ['44'],
+        '46': ['45']
+    }
     dists = np.ones((len(clusters_dict), len(tracks)))
 
     for row, global_id in enumerate(clusters_dict.keys()):
         for col, track in enumerate(tracks):
             # To make them connect only with the lost clusters (For no MTSC erase)
-            if fdx - clusters_dict[global_id].end_frame == 0:
+            cluster = clusters_dict[global_id]
+            if fdx - cluster.end_frame == 0:
+                continue
+            if track.end_frame - cluster.end_frame > opt.max_time_lost:
                 continue
 
             # Should not appear in same camera
-            if track.cam in clusters_dict[global_id].cam_list:
+            if track.cam in cluster.cam_list:
+                continue
+
+            # 修改拓扑关系检查：确保cluster的最后一个摄像头在track摄像头的拓扑列表中
+            if cluster.tracks[-1].cam not in camera_topology[track.cam]:
+                continue
+
+            if cluster.tracks[-1].current_lane != track.current_lane:
                 continue
 
             # Calculate distance
-            dists[row, col] = np.min(cdist(clusters_dict[global_id].get_feature(),
+            dists[row, col] = np.min(cdist(cluster.get_feature(),
                                            track.get_feature(mode=opt.get_feat_mode)[np.newaxis, :], metric))
 
     dists = np.clip(dists, 0, 1) if metric == 'cosine' else dists

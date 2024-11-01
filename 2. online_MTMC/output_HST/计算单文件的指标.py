@@ -7,6 +7,8 @@ import sys
 import zipfile
 import tarfile
 import traceback
+from marshal import version
+
 import numpy as np
 import pandas as pd
 import scipy as sp
@@ -21,6 +23,8 @@ from prettytable import PrettyTable
 from termcolor import colored
 
 from tqdm import tqdm
+
+from opts import opt
 
 warnings.filterwarnings("ignore")
 
@@ -449,28 +453,13 @@ info = {
 def eval_wrapper(test, pred, mread, dstype, roidir, result):
     result.append(eval(test, pred, mread=mread, dstype=dstype, roidir=roidir))
 
-def calculate_results(test_path, pred_path, baseline_path='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/result/version/baseline.txt', mread=False, dstype='validation', roidir='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real'):
+def calculate_results(test_path, pred_path, mread=False, dstype='validation', roidir='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real'):
     test = readData(test_path)
     pred = readData(pred_path)
-    baseline = readData(baseline_path)
     try:
         pred_results = []
-        baseline_results = []
-        threads = []
-        
-        t1 = threading.Thread(target=eval_wrapper, args=(test, pred, mread, dstype, roidir, pred_results))
-        t2 = threading.Thread(target=eval_wrapper, args=(test, baseline, mread, dstype, roidir, baseline_results))
-        
-        threads.append(t1)
-        threads.append(t2)
-        
-        for t in threads:
-            t.start()
-        
-        for t in threads:
-            t.join()
-
-        my_print_result(pred_results[0], baseline_results[0])
+        eval_wrapper(test, pred, mread, dstype, roidir, pred_results)
+        my_print_result(pred_results[0])
     except Exception as e:
         if mread:
             print('{"error": "%s"}' % repr(e))
@@ -478,46 +467,36 @@ def calculate_results(test_path, pred_path, baseline_path='/home/chatmindai/proj
             print("Error: %s" % repr(e))
         traceback.print_exc()
 
-def my_print_result(pred_summary, baseline_summary):
+def my_print_result(pred_summary):
     pred_dict = pred_summary.to_dict(orient='records')[0]
-    baseline_dict = baseline_summary.to_dict(orient='records')[0]
     
     # 创建表格
     table = PrettyTable()
-    table.field_names = ["指标", "预测结果", "baseline结果", "指标解释"]
+    table.field_names = ["指标", "预测结果", "指标解释"]
     
     # 定义要优先显示的指标
     priority_metrics = ['idf1', 'idfp', 'idfn', 'idtp', 'mota']
     
-    # 定义越低越好的指标
-    lower_better = ['idfp', 'idfn', 'num_misses', 'num_transfer', 'num_ascend', 'num_migrate']
-    
-    def format_value(value, is_better):
-        if isinstance(value, float) and not value.is_integer():
-            formatted = f"{value:.6%}"
-        else:
-            formatted = str(value)
-        color = 'red' if is_better else 'green'
-        return colored(formatted, color)
-
     # 先添加优先指标
     for key in priority_metrics:
         pred_value = pred_dict[key]
-        baseline_value = baseline_dict[key]
-        is_better = pred_value < baseline_value if key in lower_better else pred_value > baseline_value
-        formatted_pred = format_value(pred_value, is_better)
-        formatted_baseline = format_value(baseline_value, not is_better)
-        table.add_row([key, formatted_pred, formatted_baseline, info[key]])
+        # 格式化数值
+        if isinstance(pred_value, float) and not pred_value.is_integer():
+            formatted_pred = f"{pred_value:.6%}"
+        else:
+            formatted_pred = str(pred_value)
+        table.add_row([key, formatted_pred, info[key]])
     
     # 添加其他指标
     for key in pred_dict.keys():
         if key not in priority_metrics:
             pred_value = pred_dict[key]
-            baseline_value = baseline_dict[key]
-            is_better = pred_value < baseline_value if key in lower_better else pred_value > baseline_value
-            formatted_pred = format_value(pred_value, is_better)
-            formatted_baseline = format_value(baseline_value, not is_better)
-            table.add_row([key, formatted_pred, formatted_baseline, info[key]])
+            # 格式化数值
+            if isinstance(pred_value, float) and not pred_value.is_integer():
+                formatted_pred = f"{pred_value:.6%}"
+            else:
+                formatted_pred = str(pred_value)
+            table.add_row([key, formatted_pred, info[key]])
     
     # 设置表格样式
     table.align = "l"
@@ -527,11 +506,12 @@ def my_print_result(pred_summary, baseline_summary):
     print(table)
 
 if __name__ == '__main__':
-    pred_path = f'result/version/vn1.txt'
-    baseline_path = f'result/version/baseline.txt'
+    version=opt.version
+    version = '14'
+    pred_path = f'result/version/v{version}.txt'
     gt_path = './test_gt.txt'
     
-    calculate_results(gt_path, pred_path, baseline_path)
+    calculate_results(gt_path, pred_path)
 
 
 

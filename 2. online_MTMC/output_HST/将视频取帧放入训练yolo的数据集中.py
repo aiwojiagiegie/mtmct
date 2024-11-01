@@ -12,7 +12,7 @@ from tqdm import tqdm
 # 定义路径
 base_video_path = "/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real"
 gt_file = "./test_gt.txt"  # 请确保此路径正确
-output_path = "/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/yolov10/datasets3/multi_class"
+output_path = "/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/yolov10/datasets5/multi_class"
 
 # 创建输出目录
 os.makedirs(os.path.join(output_path, "train", "images"), exist_ok=True)
@@ -66,11 +66,10 @@ def process_videos():
                     if not ret:
                         break
 
-                    frame_count += 1
                     if int(camera_id) in annotations and frame_count in annotations[int(camera_id)]:
                         frame_filename = f"{camera_id}_{frame_count:06d}.jpg"
                         all_frames.append((frame, frame_filename, annotations[int(camera_id)][frame_count]))
-
+                    frame_count += 1
                 video.release()
 
     # 打乱帧的顺序并分割为训练集和验证集

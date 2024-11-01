@@ -228,7 +228,7 @@ class Track(BaseTrack):
         return self.obs_history[0][6]  # 如果所有有效记录都是"未知"，则返回"未知"
 
     def __repr__(self):
-        return 'OT_{}_({}-{})_{}_{}_{}_{}'.format(
+        return 'OT_{}_({}-{})_{}_{}_{}'.format(
             self.track_id, self.start_frame, self.end_frame, 
-            self.state, self.global_id, self.cam, self.current_lane
+            self.state, self.global_id, self.cam
         )

@@ -12,7 +12,7 @@ import numpy as np
 from tqdm import tqdm
 
 from output_HST.将视频取帧放入训练yolo的数据集中 import output_path
-from output_HST.计算指标 import calculate_results
+from output_HST.计算单文件的指标 import calculate_results
 from opts import opt
 from torchvision import transforms
 from utils.sklearn_dunn import dunn
@@ -27,6 +27,7 @@ from utils.general import check_img_size, non_max_suppression, scale_coords
 from utils.utils import letterbox, class_agnostic_nms, pairwise_tracks_dist
 from yolov10.ultralytics import YOLOv10
 from ReId import ReId
+import torchvision.ops
 
 class Cluster:
     def __init__(self):
@@ -98,10 +99,10 @@ def prepare_align(cams, f_nums):
 #         for i in range(0, np.max(f_nums) + 1):
 #             # 对齐帧，使所有摄像头在 15:30:00 时的帧号都为 109
 #             aligned_frame = i + offset
-            
+
 #             # 确保对齐后的帧号不小于 0
 #             temp_align[cam][i] = aligned_frame
-        
+
 #     return temp_align
 
 
@@ -129,9 +130,11 @@ class MTMCT(object):
         # self.img_size[1] = check_img_size(opt.img_size[1], s=self.stride)
         # Load feature extraction model
         if opt.baseline_reid:
+            print("现在使用baseline的reid")
             feat_ext_model = FeatureExtractor(opt.feat_ext_name, opt.avg_type, opt.feat_ext_weights)
             self.feat_ext_model = feat_ext_model.cuda().eval().half()
         else:
+            print("现在使用新的的reid")
             self.ReId = ReId(opt.reid_path)
         # For feature extraction model
         self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -213,7 +216,7 @@ class MTMCT(object):
     def run_mtmct(self):
         # 初始化视频写入器字典
         video_writers = {}
-        
+
         # Run
         for fdx in tqdm(range(0, np.max(self.f_nums))):
             # 准备图像数据
@@ -261,7 +264,7 @@ class MTMCT(object):
     def draw_debug_video(self, batch_img, detection, valid_cam, video_writers):
         if opt.draw_debug:
             base_path = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real'
-            output_path = './output_HST/debug生成视频文件2'
+            output_path = './output_HST/debug生成视频文件 新训练的模型'
             for idx, det in enumerate(self.cams):
                 if valid_cam[det]:
                     # 初始化视频写入器
@@ -316,7 +319,7 @@ class MTMCT(object):
                 # 如果读取失败，使用空白图像并标记为无效
                 batch_img.append(np.zeros((self.img_size[0], self.img_size[1], 3), dtype=np.uint8))
                 valid_cam[cam] = False
-                
+
                 if fdx >= self.total_frames[cam]:
                     pass
                     # print(f"警告：尝试读取的帧{fdx}超过了摄像头{cam}的总帧数{self.total_frames[cam]}")
@@ -373,8 +376,8 @@ class MTMCT(object):
         online_tracks = []
         for cam in self.cams:
             online_tracks += online_tracks_filtered[cam]
-        
-        
+
+
         for track in online_tracks:
             index = camera_order.index(track.cam)
             if index == 0:
@@ -519,7 +522,7 @@ class MTMCT(object):
         remain_tracks = [track for track in online_tracks if track.global_id is None]
 
         # 计算先前聚类和当前聚类之间的成对距离
-        dists = pairwise_tracks_dist(self.clusters_dict, remain_tracks, fdx, metric='cosine')
+        dists = pairwise_tracks_dist(self.clusters_dict, remain_tracks, fdx, metric='cosine' , opt=opt)
 
         # 运行匈牙利算法
         indices = linear_assignment(dists)
@@ -552,17 +555,54 @@ class MTMCT(object):
         self.total_times['MTMC'] += time.time() - start
 
         self.record_result(fdx, online_tracks)
-
     def filter_tracks_by_overlap(self, online_tracks, p_dists):
+        # 定义摄像头拓扑结构
+        camera_topology = {
+            '41': ['42'],
+            '42': ['43'],
+            '43': ['44'],
+            '44': ['45'],
+            '45': ['46'],
+            '46': []
+        }
         for i in range(len(online_tracks)):
             for j in range(i + 1, len(online_tracks)):
-                # Covert index
+                # 转换索引
                 idx = len(online_tracks) * i + j - ((i + 2) * (i + 1)) // 2
 
-                # If same camera
+                # 如果是同一个摄像头，过滤
                 if online_tracks[i].cam == online_tracks[j].cam:
                     p_dists[idx] = 10
                     continue
+
+                # 如果两个轨迹不在同一个车道上，过滤
+                if online_tracks[i].current_lane != online_tracks[j].current_lane:
+                    p_dists[idx] = 10
+                    continue
+
+                # 检查摄像头是否相邻 i 在前 j在后
+                cam_i = online_tracks[i].cam
+                cam_j = online_tracks[j].cam
+
+                # 如果两个轨迹都有global_id或都没有global_id，跳过
+                # if (online_tracks[i].global_id is None and online_tracks[j].global_id is None) or \
+                #    (online_tracks[i].global_id is not None and online_tracks[j].global_id is not None):
+                #     p_dists[idx] = 10
+                #     continue
+
+                # if online_tracks[i].global_id is not None and online_tracks[j].global_id is not None:
+                #     p_dists[idx] = 10
+                #     continue
+
+                # # # 确保cam_i是有global_id的轨迹所在的摄像头
+                # if online_tracks[i].global_id is None:
+                #     cam_i, cam_j = cam_j, cam_i
+                #
+                # # 如果两个摄像头不相邻，过滤
+                # topology_cams = camera_topology[cam_i]
+                # if cam_j not in topology_cams:
+                #     p_dists[idx] = 10
+                #     continue
 
                 # If the objects are not in overlapping region (i -> j)
                 # 根据摄像头与摄像头之间的overlap区域过滤
@@ -691,7 +731,7 @@ class MTMCT(object):
                 batch_feat = self.feat_ext_model(batch_patch)
             # 将batch_feat转换为NumPy数组
             batch_feat = batch_feat.cpu().numpy()
-        
+
         # 当batch_feat为一维的时候，给它改成二维
         if batch_feat.ndim == 1:
             batch_feat = batch_feat[np.newaxis, :]
@@ -742,11 +782,25 @@ class MTMCT(object):
             for obj in boxes:
                 if int(obj[5]) in [2, 5, 7]:
                     temp_add.append(obj)
+                    
             if len(temp_add) == 0:
                 tensor_temp_add = torch.zeros((0, 6), dtype=torch.float16).cuda().half()
             else:
+                # 转换为tensor
                 tensor_temp_add = torch.tensor(temp_add, dtype=torch.float16).cuda().half()
+                
+                # 应用NMS
+                # 获取boxes、scores和classes
+                boxes = tensor_temp_add[:, :4]  # xyxy格式
+                scores = tensor_temp_add[:, 4]  # confidence scores
+                classes = tensor_temp_add[:, 5]  # class ids
+                
+                # 应用NMS,iou_threshold可以根据需要调整
+                keep = torchvision.ops.nms(boxes, scores, iou_threshold=0.45)
+                tensor_temp_add = tensor_temp_add[keep]
+                
             ans.append(tensor_temp_add)
+            
         self.total_times['Det'] += time.time() - self.start
         return ans
 
@@ -863,10 +917,10 @@ def run():
         mtmct.run_mtmct()
     if not os.path.exists(mtmct.debug_mtmct_pkl):
         os.makedirs(os.path.dirname(mtmct.debug_mtmct_pkl), exist_ok=True)
-    
+
     # 在保存之前清理 ReID 模型
     mtmct.cleanup_for_pickle()
-    
+
     with open(mtmct.debug_mtmct_pkl, 'wb') as f:
         pickle.dump(mtmct, f)
     return mtmct
@@ -937,6 +991,8 @@ if __name__ == '__main__':
             pickle.dump(mtmct, f)
         calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
     else:
+        # opt.draw_debug = True
+        # os.environ['CUDA_VISIBLE_DEVICES'] = '1'
         mtmct_version = f'version/v{opt.version}'
         outputs_mtmct_pkl = f'{mtmct_version}/mtmct.pkl'
         main()

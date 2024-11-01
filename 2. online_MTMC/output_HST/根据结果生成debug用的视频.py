@@ -221,7 +221,7 @@ def draw_bboxes_remove_duplicate(video_path, bbox_data_gt, bbox_data_pred, outpu
     out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
     # 读取每一帧，并绘制边界框
-    frame_number = 0
+    frame_number = 1
     # 创建tqdm进度条
     progress_bar = tqdm(total=total_frames, desc=f"处理{video_path}中")
     while True:
@@ -322,6 +322,9 @@ def generate_depart():
 
 
 def generate_all_in():
+    # 删除压缩文件夹
+    if os.path.exists(f'debug/{version}/allIn/压缩'):
+        shutil.rmtree(f'debug/{version}/allIn/压缩')
     bbox_info, gt_bbox_colors = get_bbox_data(gt_path)
     target_info, pred_bbox_colors = get_bbox_data(detection_path)
     all_in_bbox_info = {}
@@ -420,9 +423,9 @@ def compress_video(video_path):
 
 
 if __name__ == '__main__':
-    opt.version='filtered'
+    opt.version='8'
     version = 'v'+str(opt.version)
-    detection_path = f'./测试/pred_filtered.txt'
+    detection_path = f'./result/version/{version}.txt'
     gt_path = 'test_gt.txt'
     generate_all_in()
     # generate_depart()

@@ -2,6 +2,9 @@ import numpy as np
 from collections import defaultdict
 from prettytable import PrettyTable
 
+from opts import opt
+
+
 def iou(box1, box2):
     """计算两个边界框的IOU"""
     x1, y1, w1, h1 = box1
@@ -55,9 +58,11 @@ def compare_all_cars(gt_file, pred_file):
 
 
 if __name__ == '__main__':
+    version = opt.version
+    # version = '9'
     gt_file = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/test_gt.txt'
-    pred_file = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/result/version/vn1.txt'
-    baseline_file = './result/version/baseline.txt'
+    pred_file = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/result/version/v{version}.txt'
+    baseline_file = 'result/version/HST_新跟踪方法_76%.txt'
 
     all_matched_ids, gt_frame_ranges = compare_all_cars(gt_file, pred_file)
     baseline_matched_ids, _ = compare_all_cars(gt_file, baseline_file)

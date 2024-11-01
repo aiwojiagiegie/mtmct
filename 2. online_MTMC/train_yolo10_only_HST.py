@@ -3,7 +3,7 @@ from random import random
 from yolov10.ultralytics.models import YOLOv10
 
 model_yaml_path = "./yolov10/ultralytics/cfg/models/v10/yolov10n.yaml"
-data_yaml_path = './yolov10/datasets3/multi_class/data.yaml'
+data_yaml_path = './yolov10/datasets5/multi_class/data.yaml'
 
 if __name__ == '__main__':
     pre_model_name = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/yolov10/models/yolov10s.pt'
