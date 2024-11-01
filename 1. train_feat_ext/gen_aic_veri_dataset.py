@@ -70,41 +70,50 @@ def gen_aic_veri_dataset():
         # 对于每个摄像头
         cams = os.listdir(data_path + scene)
         for cam in cams:
-            # 设置路径
-            cam_path = os.path.join(data_path, scene, cam)
-
-            # 读取gt_file并写入csv_file
-            for key, value in gt_dict.items():
-                # 读取GT
-                cam_num = str(key[0])
-                if cam_num != cam:
-                    continue
-                f_num, obj_id = int(key[1]), int(key[2])
-                left, top = round(float(value[0])), round(float(value[1]))
-                w, h = round(float(value[2])), round(float(value[3]))
-
-                # 读取帧图像
-                img_path = cam_path + '/frame/%s_f%04d.jpg' % (cam, f_num + 1)
-                frame_img = cv2.imread(img_path)
-
-                # 保存bbox patch
-                bbox = frame_img[top:top + h + 1, left:left + w + 1, :]
-                target_path = id_to_path[obj_id]
-                image_name = '%04d_%s_%08d_0.jpg' % (obj_id + 1000, cam, f_num + 1)
-                image_path = os.path.join(target_path, image_name)
-                cv2.imwrite(image_path, bbox)
-
-                # 将图像名称写入对应的name_*.txt文件
-                if target_path == data_paths[0]:
-                    name_files['query'].write(image_name + '\n')
-                elif target_path == data_paths[1]:
-                    name_files['test'].write(image_name + '\n')
-                else:
-                    name_files['train'].write(image_name + '\n')
-
-                print(f'完成生成{image_path}')
-
-            # 打印当前状态
+            # 设置视频路径
+            video_path = os.path.join(data_path, scene, cam, f'{cam}.mp4')  # 假设视频文件名为video.mp4
+            
+            # 打开视频流
+            cap = cv2.VideoCapture(video_path)
+            if not cap.isOpened():
+                print(f"无法打开视频: {video_path}")
+                continue
+                
+            frame_count = 0
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                    
+                # 处理当前帧的所有bbox
+                current_frame_keys = [k for k in gt_dict.keys() if k[0] == cam and k[1] == frame_count]
+                
+                for key in current_frame_keys:
+                    # 读取GT
+                    cam_num, f_num, obj_id = key
+                    left, top, w, h = gt_dict[key]
+                    
+                    # 裁剪并保存bbox
+                    bbox = frame[top:top + h + 1, left:left + w + 1, :]
+                    target_path = id_to_path[obj_id]
+                    image_name = '%04d_%s_%08d_0.jpg' % (obj_id + 1000, cam, f_num + 1)
+                    image_path = os.path.join(target_path, image_name)
+                    cv2.imwrite(image_path, bbox)
+                    
+                    # 写入对应的name_*.txt文件
+                    if target_path == data_paths[0]:
+                        name_files['query'].write(image_name + '\n')
+                    elif target_path == data_paths[1]:
+                        name_files['test'].write(image_name + '\n')
+                    else:
+                        name_files['train'].write(image_name + '\n')
+                    
+                    print(f'完成生成{image_path}')
+                
+                frame_count += 1
+            
+            # 释放视频资源
+            cap.release()
             print('%s_%s 已完成' % (scene, cam))
 
     # 关闭name_*.txt文件
