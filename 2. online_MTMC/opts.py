@@ -1,5 +1,7 @@
 import argparse
 
+dataset_hst_default = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real'
+
 
 class Opts:
     def __init__(self):
@@ -34,7 +36,7 @@ class Opts:
         self.parser.add_argument("--mtmc_match_thr", type=float, default=0.65)
 
         # Others
-        self.parser.add_argument('--data_dir', type=str, default='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real')
+        self.parser.add_argument('--data_dir', type=str, default=dataset_hst_default)
         self.parser.add_argument('--output_dir', type=str, default='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/result/')
         self.parser.add_argument('--min_box_size', type=int, default=0.0005, help='minimum box size')
         self.parser.add_argument('--img_ori_size', type=int, default=[1080, 1920], help='original image size (pixels)')
@@ -51,9 +53,19 @@ class Opts:
         self.parser.add_argument("--baseline_reid", help="是否使用baseline的reid", dest="baseline_reid", type=bool, default=True)
         self.parser.add_argument('--use_topology', type=bool, default=True,
                                 help='Whether to use topology-based matching strategy')
+        self.parser.add_argument('--database_name', type=str, default='AIC19',
+                                 help='是否使用AIC22数据集进行测试')
 
     def parse(self):
-        return self.parser.parse_args()
-
+        opt = self.parser.parse_args()
+        if opt.database_name == 'AIC19':
+            # 检查data_dir是否使用默认值，如果是则修改为AIC22数据集路径
+            if opt.data_dir == dataset_hst_default:
+                opt.data_dir = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/AIC19/validation/S02/'
+        elif  opt.database_name == 'HST':
+            pass
+        else :
+            raise ValueError('database_name must be AIC19 or HST')
+        return opt
 
 opt = Opts().parse()

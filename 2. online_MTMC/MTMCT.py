@@ -66,6 +66,69 @@ def prepare_align(cams, f_nums):
             # continue
             # Set for each camera
             temp_align[cam][i] = i
+            if cam == 'c006':
+                temp_align[cam][i] = i
+
+            elif cam == 'c007':
+                if i <= 1037:
+                    temp_align[cam][i] = i + 1
+                elif 1040 <= i <= 1309:
+                    temp_align[cam][i] = i - 1
+                elif 1320 <= i <= 1339:
+                    temp_align[cam][i] = i - 11
+                elif 1350 <= i <= 1379:
+                    temp_align[cam][i] = i - 21
+                elif 1400 <= i <= 1449:
+                    temp_align[cam][i] = i - 41
+                elif 1460 <= i <= 1499:
+                    temp_align[cam][i] = i - 51
+                elif 1510 <= i <= 1537:
+                    temp_align[cam][i] = i - 61
+                elif 1540 <= i <= 1542:
+                    temp_align[cam][i] = i - 63
+                elif 1560 <= i <= 1609:
+                    temp_align[cam][i] = i - 80
+                elif 1620 <= i <= 1639:
+                    temp_align[cam][i] = i - 90
+                elif 1650 <= i <= 1864:
+                    temp_align[cam][i] = i - 100
+                elif 1870 <= i <= 1893:
+                    temp_align[cam][i] = i - 105
+                elif 1901 <= i <= 1920:
+                    temp_align[cam][i] = i - 112
+                elif 1927 <= i <= 1933:
+                    temp_align[cam][i] = i - 118
+                elif 1940 <= i <= 1989:
+                    temp_align[cam][i] = i - 124
+                elif 2000 <= i <= 2049:
+                    temp_align[cam][i] = i - 134
+                elif 2060 <= i:
+                    temp_align[cam][i] = i - 144
+
+            elif cam == 'c008':
+                if 7 <= i <= 421:
+                    temp_align[cam][i] = i - 6
+                elif 439 <= i <= 472:
+                    temp_align[cam][i] = i - 23
+                elif 479 <= i <= 548:
+                    temp_align[cam][i] = i - 29
+                elif 603 <= i <= 685:
+                    temp_align[cam][i] = i - 83
+                elif 728 <= i <= 925:
+                    temp_align[cam][i] = i - 125
+                elif 934 <= i <= 1397:
+                    temp_align[cam][i] = i - 133
+                elif 1401 <= i <= 1612:
+                    temp_align[cam][i] = i - 136
+                elif 1621 <= i <= 1752:
+                    temp_align[cam][i] = i - 144
+                elif 1763 <= i <= 1920:
+                    temp_align[cam][i] = i - 154
+                elif 1958 <= i:
+                    temp_align[cam][i] = i - 191
+
+            elif cam == 'c009':
+                temp_align[cam][i] = i - 9
     return temp_align
 # def prepare_align(cams, f_nums):
 #     temp_align = {}
@@ -160,13 +223,19 @@ class MTMCT(object):
             self.f_nums.append(self.datasets[cam].nf)
 
             # Prepare 2
-            self.roi_masks[cam] = cv2.imread('/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real/%s/%s.png' % (cam,cam), cv2.IMREAD_GRAYSCALE)
+            if opt.database_name == 'HST':
+                self.roi_masks[cam] = cv2.imread('/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real/%s/%s.png' % (cam,cam), cv2.IMREAD_GRAYSCALE)
+            elif opt.database_name == 'AIC19' :
+                self.roi_masks[cam] = cv2.imread(f'{opt.data_dir}/${cam}/roi.jpg', cv2.IMREAD_GRAYSCALE)
             self.overlap_regions_cam2cam[cam] = {}
             for cam_ in self.cams:
                 if cam_ == cam:
                     self.overlap_regions_cam2cam[cam][cam_] = None
                     continue
-                overlap_file = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/preliminary/overlap_zones/HST/{cam}_{cam_}.png'
+                if opt.database_name == 'AIC19':
+                    overlap_file = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/preliminary/overlap_zones/{cam}_{cam_}.png'
+                else:
+                    overlap_file = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/preliminary/overlap_zones/HST/{cam}_{cam_}.png'
                 if os.path.exists(overlap_file):
                     self.overlap_regions_cam2cam[cam][cam_] = cv2.imread(overlap_file, cv2.IMREAD_GRAYSCALE)
                 else:
@@ -197,16 +266,22 @@ class MTMCT(object):
         self.current_frame = {}
         self.total_frames = {}  # 新增：存储每个摄像头的总帧数
         for cam in self.cams:
-            video_path = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real/{cam}/{cam}.mp4'
+            if opt.database_name=='AIC19':
+                video_path = f'${opt.data_dir}/{cam}/vdo.avi'
+            else:
+                video_path = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real/{cam}/{cam}.mp4'
             self.video_captures[cam] = cv2.VideoCapture(video_path)
             self.current_frame[cam] = 0
             self.total_frames[cam] = int(self.video_captures[cam].get(cv2.CAP_PROP_FRAME_COUNT))  # 获取总帧数
 
     def load_background_images(self):
         background_images = {}
-        base_path = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real/'
+        base_path = opt.data_dir
         for cam in self.cams:
-            img_ori_path = os.path.join(base_path, cam, f'{cam}.png')
+            if opt.database_name == 'AIC19':
+                img_ori_path = os.path.join(base_path, cam, 'roi.jpg')
+            else:
+                img_ori_path = os.path.join(base_path, cam, f'{cam}.jpg')
             if os.path.exists(img_ori_path):
                 background_images[cam] = cv2.imread(img_ori_path)
             else:
@@ -263,8 +338,7 @@ class MTMCT(object):
 
     def draw_debug_video(self, batch_img, detection, valid_cam, video_writers):
         if opt.draw_debug:
-            base_path = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real'
-            output_path = './output_HST/debug生成视频文件 新训练的模型'
+            output_path = './output_HST/debug生成视频文件'
             for idx, det in enumerate(self.cams):
                 if valid_cam[det]:
                     # 初始化视频写入器
@@ -955,7 +1029,11 @@ def debug():
 def main():
     mtmct = run()
     # mtmct = read_pkl_from_file(outputs_mtmct_pkl)
-    calculate_results('/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/test_gt.txt', mtmct.result_path)
+    if opt.database_name == 'HST':
+        calculate_results('/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/test_gt.txt', mtmct.result_path)
+    elif opt.database_name == 'AIC19':
+        from outputs.eval import calculate_results as AIC_calculate_results
+        AIC_calculate_results('/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/outputs/ground_truth_validation.txt', mtmct.result_path)
     return mtmct
 
 # 模型配置文件
