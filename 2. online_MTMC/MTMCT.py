@@ -226,7 +226,7 @@ class MTMCT(object):
             if opt.database_name == 'HST':
                 self.roi_masks[cam] = cv2.imread('/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real/%s/%s.png' % (cam,cam), cv2.IMREAD_GRAYSCALE)
             elif opt.database_name == 'AIC19' :
-                self.roi_masks[cam] = cv2.imread(f'{opt.data_dir}/${cam}/roi.jpg', cv2.IMREAD_GRAYSCALE)
+                self.roi_masks[cam] = cv2.imread(f'{opt.data_dir}/{cam}/roi.jpg', cv2.IMREAD_GRAYSCALE)
             self.overlap_regions_cam2cam[cam] = {}
             for cam_ in self.cams:
                 if cam_ == cam:
@@ -267,7 +267,7 @@ class MTMCT(object):
         self.total_frames = {}  # 新增：存储每个摄像头的总帧数
         for cam in self.cams:
             if opt.database_name=='AIC19':
-                video_path = f'${opt.data_dir}/{cam}/vdo.avi'
+                video_path = f'{opt.data_dir}{cam}/vdo.avi'
             else:
                 video_path = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real/{cam}/{cam}.mp4'
             self.video_captures[cam] = cv2.VideoCapture(video_path)
@@ -338,7 +338,10 @@ class MTMCT(object):
 
     def draw_debug_video(self, batch_img, detection, valid_cam, video_writers):
         if opt.draw_debug:
-            output_path = './output_HST/debug生成视频文件'
+            if opt.database_name=='HST':
+                output_path = './output_HST/debug生成视频文件'
+            elif opt.database_name=='AIC19':
+                output_path = './outputs/debug生成视频文件'
             for idx, det in enumerate(self.cams):
                 if valid_cam[det]:
                     # 初始化视频写入器
@@ -637,7 +640,11 @@ class MTMCT(object):
             '43': ['44'],
             '44': ['45'],
             '45': ['46'],
-            '46': []
+            '46': [],
+            'c006': ['c006','c007','c008','c009'],
+            'c007': ['c006', 'c007', 'c008', 'c009'],
+            'c008': ['c006', 'c007', 'c008', 'c009'],
+            'c009': ['c006', 'c007', 'c008', 'c009']
         }
         for i in range(len(online_tracks)):
             for j in range(i + 1, len(online_tracks)):
@@ -667,7 +674,9 @@ class MTMCT(object):
                 # if online_tracks[i].global_id is not None and online_tracks[j].global_id is not None:
                 #     p_dists[idx] = 10
                 #     continue
-
+                if online_tracks[i].global_id is None:
+                    p_dists[idx] = 10
+                    continue
                 # # # 确保cam_i是有global_id的轨迹所在的摄像头
                 # if online_tracks[i].global_id is None:
                 #     cam_i, cam_j = cam_j, cam_i
@@ -1069,7 +1078,7 @@ if __name__ == '__main__':
             pickle.dump(mtmct, f)
         calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
     else:
-        # opt.draw_debug = True
+        opt.draw_debug = True
         # os.environ['CUDA_VISIBLE_DEVICES'] = '1'
         mtmct_version = f'version/v{opt.version}'
         outputs_mtmct_pkl = f'{mtmct_version}/mtmct.pkl'

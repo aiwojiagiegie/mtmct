@@ -142,7 +142,11 @@ def pairwise_tracks_dist(clusters_dict, tracks, fdx, metric , opt):
         '43': ['42'],
         '44': ['43'],
         '45': ['44'],
-        '46': ['45']
+        '46': ['45'],
+        'c006': ['c006', 'c007', 'c008', 'c009'],
+        'c007': ['c006', 'c007', 'c008', 'c009'],
+        'c008': ['c006', 'c007', 'c008', 'c009'],
+        'c009': ['c006', 'c007', 'c008', 'c009']
     }
     dists = np.ones((len(clusters_dict), len(tracks)))
 

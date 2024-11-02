@@ -40,7 +40,7 @@ class Opts:
         self.parser.add_argument('--output_dir', type=str, default='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/result/')
         self.parser.add_argument('--min_box_size', type=int, default=0.0005, help='minimum box size')
         self.parser.add_argument('--img_ori_size', type=int, default=[1080, 1920], help='original image size (pixels)')
-        self.parser.add_argument('--version', type=str, default='15', help='original image size (pixels)')
+        self.parser.add_argument('--version', type=str, default='6', help='original image size (pixels)')
         # self.parser.add_argument('--version', type=str, default='26', help='original image size (pixels)')
         self.parser.add_argument("--train", help="是否训练新的模型", dest="train", type=bool, default="")
         self.parser.add_argument("--draw_debug", help="是否绘制debug视频", dest="draw_debug", type=bool, default=False)
@@ -62,6 +62,8 @@ class Opts:
             # 检查data_dir是否使用默认值，如果是则修改为AIC22数据集路径
             if opt.data_dir == dataset_hst_default:
                 opt.data_dir = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/AIC19/validation/S02/'
+            opt.output_dir='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/outputs/result/'
+            opt.yolo10_model='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/preliminary/det_weights/my/best_multiple3.pt'
         elif  opt.database_name == 'HST':
             pass
         else :
