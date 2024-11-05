@@ -491,7 +491,7 @@ def my_print_result(summary):
             else:
                 print(format_str.format(key, baseline[key], value, difference,symbol, info[key]))
 if __name__ == '__main__':
-    detection_path = f'../outputs/result/version/v6.txt'
+    detection_path = f'../outputs/result/version/v7.txt'
     gt_path = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/outputs/ground_truth_validation.txt'
     # calculate_results('ground_truth_validation.txt', f'ground_truth_validation.txt')
     calculate_results(gt_path, detection_path)

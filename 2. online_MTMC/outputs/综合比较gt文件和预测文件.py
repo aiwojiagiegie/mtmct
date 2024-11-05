@@ -58,8 +58,8 @@ def compare_all_cars(gt_file, pred_file):
 
 
 if __name__ == '__main__':
-    # version = opt.version
-    version = '6'
+    version = opt.version
+    # version = '6'
     gt_file = './ground_truth_validation.txt'
     pred_file = f'./result/version/v{version}.txt'
     baseline_file = 'result/baseline.txt'
@@ -131,7 +131,7 @@ if __name__ == '__main__':
                         gt_range = gt_frame_ranges[gt_car_id][camera_id]
                         display_baseline_id = "" if b_id == prev_baseline_id else b_id
                         prev_baseline_id = b_id
-                        table.add_row(["", "无匹配", display_baseline_id, camera_id,
+                        table.add_row(["", "null", display_baseline_id, camera_id,
                                      f"{int(gt_range[0])}-{int(gt_range[1])}",
                                      "-",
                                      f"{int(baseline_range[0])}-{int(baseline_range[1])}"])
@@ -139,7 +139,7 @@ if __name__ == '__main__':
             gt_ranges = gt_frame_ranges[gt_car_id]
             for camera_id, gt_range in sorted(gt_ranges.items()):
                 table.add_row([gt_car_id if camera_id == list(gt_ranges.keys())[0] else "",
-                             "无匹配", "无匹配", camera_id,
+                             "null", "null", camera_id,
                              f"{int(gt_range[0])}-{int(gt_range[1])}", "-", "-"])
 
         prev_gt_car_id = gt_car_id

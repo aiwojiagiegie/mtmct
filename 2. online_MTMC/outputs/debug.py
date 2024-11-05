@@ -93,7 +93,7 @@ def draw_bboxes_all_in(video_path, bbox_data_gt, bbox_data_pred, output_path, ca
     # 读取视频
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        print("Error: Cannot open video.")
+        print(f"Error: Cannot open video.{video_path}")
         return
     # 获取视频的基本信息
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -262,7 +262,7 @@ def generate_depart():
                     f'debug/gt/c00{camera_id}.mp4', car_bbox_colors)
     target_info, car_bbox_colors = get_bbox_data(detection_path)
     for camera_id, frame_bboxes in target_info.items():
-        draw_bboxes(f'../../dataset/HST/real/{camera_id}/{camera_id}.mp4', frame_bboxes,
+        draw_bboxes(f'../../dataset/AIC19/validation/S02/c0{camera_id}/vdo.avi', frame_bboxes,
                     f'debug/HST/{version}/target/{camera_id}.mp4', car_bbox_colors)
 
 
@@ -277,9 +277,9 @@ def generate_all_in():
     for camera_id, frame_bboxes in target_info.items():
         all_in_bbox_info[camera_id]['pred'] = frame_bboxes
     for camera_id, frame_bboxes in all_in_bbox_info.items():
-        draw_bboxes_all_in(f'../../dataset/HST/real/{camera_id}/{camera_id}.mp4', frame_bboxes['gt'],
+        draw_bboxes_all_in(f'../../dataset/AIC19/validation/S02/c00{camera_id}/vdo.avi', frame_bboxes['gt'],
                            frame_bboxes['pred'],
-                           f'debug/HST/{version}/allIn/{camera_id}.mp4', gt_bbox_colors, pred_bbox_colors)
+                           f'debug/{version}/allIn/{camera_id}.mp4', gt_bbox_colors, pred_bbox_colors)
 
 
 def generate_remove_duplicate():
@@ -293,7 +293,7 @@ def generate_remove_duplicate():
     for camera_id, frame_bboxes in target_info.items():
         all_in_bbox_info[camera_id]['pred'] = frame_bboxes
     for camera_id, frame_bboxes in all_in_bbox_info.items():
-        draw_bboxes_remove_duplicate(f'../../dataset/HST/real/{camera_id}/{camera_id}.mp4',
+        draw_bboxes_remove_duplicate(f'../../dataset/AIC19/validation/S02/c0{camera_id}/vdo.avi',
                                      frame_bboxes['gt'],
                                      frame_bboxes['pred'],
                                      f'debug/HST/{version}/remove_duplicate/{camera_id}.mp4', gt_bbox_colors, pred_bbox_colors)
@@ -301,9 +301,9 @@ def generate_remove_duplicate():
 
 if __name__ == '__main__':
     version = 'v6'
-    detection_path = f'result/output_HST/result/version/{version}.txt'
-    gt_path = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/test_gt.txt'
+    detection_path = f'./result/version/{version}.txt'
+    gt_path = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/outputs/ground_truth_validation.txt'
     generate_all_in()
-    generate_depart()
-    generate_remove_duplicate()
+    # generate_depart()
+    # generate_remove_duplicate()
 

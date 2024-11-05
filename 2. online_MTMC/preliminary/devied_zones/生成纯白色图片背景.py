@@ -12,24 +12,28 @@ def process_image(input_path, output_path):
     
     # 创建一个掩码,标记需要变成白色的像素
     mask = np.logical_or(
-        (img[:,:,2] > 100),  # 红色通道 > 100
-        (img[:,:,0] > 100)   # 蓝色通道 > 100
+        (img[:,:,2] >= 0),  # 红色通道 > 100
+        (img[:,:,0] >= 0)   # 蓝色通道 > 100
     )
     
     # 将满足条件的像素设置为白色
-    img[mask] = [255, 255, 255]
+    img[mask] = [0, 0, 255]
     
     # 将图像转换为灰度图
-    gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    # gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     
     # 保存处理后的8位灰度图片
-    cv2.imwrite(output_path, gray_img)
+    cv2.imwrite(output_path, img)
     print(f"处理后的8位灰度图片已保存至: {output_path}")
 
 # 使用示例
-process_image("./41.png", "../rois/41.png")
-process_image("./42.png", "../rois/42.png")
-process_image("./43.png", "../rois/43.png")
-process_image("./44.png", "../rois/44.png")
-process_image("./45.png", "../rois/45.png")
-process_image("./46.png", "../rois/46.png")
+process_image("./41.png", "./c006.png")
+process_image("./41.png", "./c007.png")
+process_image("./41.png", "./c008.png")
+process_image("./41.png", "./c009.png")
+# process_image("./41.png", "../rois/41.png")
+# process_image("./42.png", "../rois/42.png")
+# process_image("./43.png", "../rois/43.png")
+# process_image("./44.png", "../rois/44.png")
+# process_image("./45.png", "../rois/45.png")
+# process_image("./46.png", "../rois/46.png")

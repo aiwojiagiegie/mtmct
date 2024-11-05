@@ -226,7 +226,7 @@ class MTMCT(object):
             if opt.database_name == 'HST':
                 self.roi_masks[cam] = cv2.imread('/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real/%s/%s.png' % (cam,cam), cv2.IMREAD_GRAYSCALE)
             elif opt.database_name == 'AIC19' :
-                self.roi_masks[cam] = cv2.imread(f'{opt.data_dir}/{cam}/roi.jpg', cv2.IMREAD_GRAYSCALE)
+                self.roi_masks[cam] = cv2.imread(f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/preliminary/rois/{cam}.png', cv2.IMREAD_GRAYSCALE)
             self.overlap_regions_cam2cam[cam] = {}
             for cam_ in self.cams:
                 if cam_ == cam:
@@ -300,6 +300,18 @@ class MTMCT(object):
             # 目标检测
             preds = self.detect(batch_img, valid_cam)
 
+            # 对每个预测结果应用NMS
+            for i in range(len(preds)):
+                if len(preds[i]) > 0:
+                    # 获取boxes、scores和classes
+                    boxes = preds[i][:, :4]  # xyxy格式
+                    scores = preds[i][:, 4]  # confidence scores
+                    classes = preds[i][:, 5]  # class ids
+                    
+                    # 应用NMS
+                    keep = torchvision.ops.nms(boxes, scores, iou_threshold=0.5)
+                    preds[i] = preds[i][keep]
+
             # REID
             feat, detection = self.reid(batch_img, preds)
 
@@ -371,33 +383,42 @@ class MTMCT(object):
 
     def generate_image_info(self, fdx):
         """
-        从视频中准备图像数据
+        从视频中准备图像数据，并应用ROI过滤
         """
         batch_img = []
         valid_cam = {}
 
         for cam in self.cams:
             cap = self.video_captures[cam]
-
+            real_fdx = self.temp_align[cam][fdx]
+            
+            # 如果帧号小于0，返回空白图像
+            if real_fdx < 0:
+                batch_img.append(np.zeros((self.img_h, self.img_w, 3), dtype=np.uint8))
+                valid_cam[cam] = False
+                continue
+                
             # 如果当前帧不是我们需要的帧，进行寻帧操作
-            if fdx != self.current_frame[cam]:
-                cap.set(cv2.CAP_PROP_POS_FRAMES, fdx)
-                self.current_frame[cam] = fdx
+            if real_fdx != self.current_frame[cam]:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, real_fdx)
+                self.current_frame[cam] = real_fdx
 
             # 读取帧
             ret, frame = cap.read()
 
             if ret:
-                img = cv2.resize(frame, (self.img_size[1], self.img_size[0]))
-                batch_img.append(img)
+                # 先应用ROI掩码过滤
+                frame[self.roi_masks[cam] != 255] = 0
+
+                batch_img.append(frame)
                 valid_cam[cam] = True
-                self.current_frame[cam] += 1
+                self.current_frame[cam] = real_fdx+1
             else:
                 # 如果读取失败，使用空白图像并标记为无效
-                batch_img.append(np.zeros((self.img_size[0], self.img_size[1], 3), dtype=np.uint8))
+                batch_img.append(np.zeros((self.img_h, self.img_w, 3), dtype=np.uint8))
                 valid_cam[cam] = False
 
-                if fdx >= self.total_frames[cam]:
+                if real_fdx >= self.total_frames[cam]:
                     pass
                     # print(f"警告：尝试读取的帧{fdx}超过了摄像头{cam}的总帧数{self.total_frames[cam]}")
                 else:
@@ -505,14 +526,19 @@ class MTMCT(object):
 
             # 扩展边界框,因为gt边界框并不是紧密地围绕对象,而是比对象大得多
             cx, cy = left + w / 2, top + h / 2
-            # w, h = w * 1.45, h * 1.45
+            if opt.database_name == 'AIC19':
+                w, h = w * 1.45, h * 1.45
             left, top = cx - w / 2, cy - h / 2
-
-            # 根据大小过滤,因为gt不包括小边界框
-            # if w * h / self.img_w / self.img_h < 0.003 or 0.3 < w * h / self.img_w / self.img_h:
-            #     continue
+            if opt.database_name == 'AIC19':
+                # 根据大小过滤,因为gt不包括小边界框
+                if w * h / self.img_w / self.img_h < 0.003 or 0.3 < w * h / self.img_w / self.img_h:
+                    continue
             format = '%d %d %d %d %d %d %d -1 -1' % (
-                int(track.cam[-2:]), track.global_id, self.temp_align[track.cam][fdx], int(left), int(top),
+                int(track.cam[-2:]), 
+                track.global_id ,
+                self.temp_align[track.cam][fdx] + 1 if opt.database_name == 'AIC19' else self.temp_align[track.cam][fdx],
+                int(left), 
+                int(top),
                 int(w),
                 int(h))
             if format not in self.result_set:
@@ -530,7 +556,7 @@ class MTMCT(object):
             online_tracks += online_tracks_filtered[cam]
 
         # 收集当前已分配的全局ID
-        online_global_ids = {'41': [], '42': [], '43': [], '44': [], '45': [], '46': []}
+        online_global_ids = {cam: [] for cam in self.cams}
         for track in online_tracks:
             if track.global_id is not None:
                 online_global_ids[track.cam].append(track.global_id)
@@ -664,7 +690,7 @@ class MTMCT(object):
                 # 检查摄像头是否相邻 i 在前 j在后
                 cam_i = online_tracks[i].cam
                 cam_j = online_tracks[j].cam
-
+                if opt.database_name == 'HST':
                 # 如果两个轨迹都有global_id或都没有global_id，跳过
                 # if (online_tracks[i].global_id is None and online_tracks[j].global_id is None) or \
                 #    (online_tracks[i].global_id is not None and online_tracks[j].global_id is not None):
@@ -674,9 +700,9 @@ class MTMCT(object):
                 # if online_tracks[i].global_id is not None and online_tracks[j].global_id is not None:
                 #     p_dists[idx] = 10
                 #     continue
-                if online_tracks[i].global_id is None:
-                    p_dists[idx] = 10
-                    continue
+                    if online_tracks[i].global_id is None:
+                        p_dists[idx] = 10
+                        continue
                 # # # 确保cam_i是有global_id的轨迹所在的摄像头
                 # if online_tracks[i].global_id is None:
                 #     cam_i, cam_j = cam_j, cam_i
@@ -722,9 +748,13 @@ class MTMCT(object):
                     continue
 
                 # Filter detection with small box size, Since gt does not include small boxes
-                w, h = int(track.obs_history[-1][1][2]),int(track.obs_history[-1][1][3])
-                min_box_size = self.img_h * self.img_w * opt.min_box_size
-                if h * w <= min_box_size:
+                # w, h = int(track.obs_history[-1][1][2]),int(track.obs_history[-1][1][3])
+                # min_box_size = self.img_h * self.img_w * opt.min_box_size
+                # if h * w <= min_box_size:
+                #     continue
+
+                w, h = track.tlwh[2:]
+                if h * w <= self.img_h * self.img_w * opt.min_box_size:
                     continue
 
                 # Filter detections around border, Since gt does not include boxes around border
@@ -792,8 +822,7 @@ class MTMCT(object):
                     detection[self.cams[pdx]] = np.concatenate([detection[self.cams[pdx]], new_box], axis=0)
 
                     # Get patch
-                    patch = tensor_batch_img[pdx][:, max(y1, 0):min(y2 + 1, self.img_h),
-                            max(x1, 0):min(x2 + 1, self.img_w)]
+                    patch = tensor_batch_img[pdx][:, max(y1, 0):min(y2 + 1, self.img_w)]
                     patch = self.normalize(letterbox(patch))
                     # 如果是c008则水平翻转
                     batch_patch[det_count] = torch.fliplr(patch) if self.cams[pdx] == 'c008' else patch
@@ -830,7 +859,7 @@ class MTMCT(object):
 
     def detect(self, batch_img, valid_cam):
         self.start = time.time()
-        # 目标检测阶段
+        # 目标检测阶���
         # Detect =====================================================================================================
         # with torch.autocast('cuda'):
         #     preds = self.det_model(batch_img[list(valid_cam.values())], augment=opt.augment)[0]
@@ -1078,8 +1107,8 @@ if __name__ == '__main__':
             pickle.dump(mtmct, f)
         calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
     else:
-        opt.draw_debug = True
-        # os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+        # opt.draw_debug = True
+        os.environ['CUDA_VISIBLE_DEVICES'] = '1'
         mtmct_version = f'version/v{opt.version}'
         outputs_mtmct_pkl = f'{mtmct_version}/mtmct.pkl'
         main()

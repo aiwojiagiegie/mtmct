@@ -40,7 +40,7 @@ class Opts:
         self.parser.add_argument('--output_dir', type=str, default='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/result/')
         self.parser.add_argument('--min_box_size', type=int, default=0.0005, help='minimum box size')
         self.parser.add_argument('--img_ori_size', type=int, default=[1080, 1920], help='original image size (pixels)')
-        self.parser.add_argument('--version', type=str, default='6', help='original image size (pixels)')
+        self.parser.add_argument('--version', type=str, default='12', help='original image size (pixels)')
         # self.parser.add_argument('--version', type=str, default='26', help='original image size (pixels)')
         self.parser.add_argument("--train", help="是否训练新的模型", dest="train", type=bool, default="")
         self.parser.add_argument("--draw_debug", help="是否绘制debug视频", dest="draw_debug", type=bool, default=False)
@@ -51,9 +51,9 @@ class Opts:
         self.parser.add_argument("--pretrain_type", help="yolo预训练模型类型", dest="pretrain_type", type=str, default="s")
         self.parser.add_argument("--reid_path", help="reid模型地址", dest="reid_path", type=str, default="/home/chatmindai/project/zhangkun/vehicle_reid_itsc2023/logs/Veri776/MBR_4G/10/")
         self.parser.add_argument("--baseline_reid", help="是否使用baseline的reid", dest="baseline_reid", type=bool, default=True)
-        self.parser.add_argument('--use_topology', type=bool, default=True,
+        self.parser.add_argument('--use_topology', type=bool, default=False,
                                 help='Whether to use topology-based matching strategy')
-        self.parser.add_argument('--database_name', type=str, default='AIC19',
+        self.parser.add_argument('--database_name', type=str, default='AIC19', choices=['AIC19','HST'],
                                  help='是否使用AIC22数据集进行测试')
 
     def parse(self):
