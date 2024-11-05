@@ -28,11 +28,11 @@ class Opts:
         self.parser.add_argument("--det_low_thresh", type=float, default=0.1)
         self.parser.add_argument("--cos_thr", type=float, default=0.6)
         self.parser.add_argument("--iou_thr", type=float, default=0.6)
-        self.parser.add_argument("--max_time_lost", type=int, default=200)
+        self.parser.add_argument("--max_time_lost", type=int, default=30)
 
         # Options for MTMC
         self.parser.add_argument('--get_feat_mode', type=str, default='best')
-        self.parser.add_argument("--max_time_differ", type=int, default=2500)
+        self.parser.add_argument("--max_time_differ", type=int, default=30)
         self.parser.add_argument("--mtmc_match_thr", type=float, default=0.65)
 
         # Others
@@ -40,7 +40,7 @@ class Opts:
         self.parser.add_argument('--output_dir', type=str, default='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/result/')
         self.parser.add_argument('--min_box_size', type=int, default=0.0005, help='minimum box size')
         self.parser.add_argument('--img_ori_size', type=int, default=[1080, 1920], help='original image size (pixels)')
-        self.parser.add_argument('--version', type=str, default='12', help='original image size (pixels)')
+        self.parser.add_argument('--version', type=str, default='14', help='original image size (pixels)')
         # self.parser.add_argument('--version', type=str, default='26', help='original image size (pixels)')
         self.parser.add_argument("--train", help="是否训练新的模型", dest="train", type=bool, default="")
         self.parser.add_argument("--draw_debug", help="是否绘制debug视频", dest="draw_debug", type=bool, default=False)

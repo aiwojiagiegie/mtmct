@@ -393,7 +393,7 @@ class MTMCT(object):
             real_fdx = self.temp_align[cam][fdx]
             
             # 如果帧号小于0，返回空白图像
-            if real_fdx < 0:
+            if real_fdx <= 0:
                 batch_img.append(np.zeros((self.img_h, self.img_w, 3), dtype=np.uint8))
                 valid_cam[cam] = False
                 continue
