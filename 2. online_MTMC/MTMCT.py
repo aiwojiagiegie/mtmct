@@ -393,7 +393,7 @@ class MTMCT(object):
             real_fdx = self.temp_align[cam][fdx]
             
             # 如果帧号小于0，返回空白图像
-            if real_fdx <= 0:
+            if real_fdx < 0:
                 batch_img.append(np.zeros((self.img_h, self.img_w, 3), dtype=np.uint8))
                 valid_cam[cam] = False
                 continue
@@ -759,7 +759,7 @@ class MTMCT(object):
 
                 # Filter detections around border, Since gt does not include boxes around border
                 x1, y1, x2, y2 = track.x1y1x2y2
-                if x1 <= 4 or y1 <= 4 or x2 >= self.img_w - 5 or y2 >= self.img_h - 5:
+                if x1 <= 5 or y1 <= 5 or x2 >= self.img_w - 5 or y2 >= self.img_h - 5:
                     continue
                 online_tracks_filtered[cam].append(track)
 

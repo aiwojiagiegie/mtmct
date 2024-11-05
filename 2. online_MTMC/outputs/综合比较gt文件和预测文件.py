@@ -59,7 +59,7 @@ def compare_all_cars(gt_file, pred_file):
 
 if __name__ == '__main__':
     version = opt.version
-    # version = '6'
+    # version = '1'
     gt_file = './ground_truth_validation.txt'
     pred_file = f'./result/version/v{version}.txt'
     baseline_file = 'result/baseline.txt'
