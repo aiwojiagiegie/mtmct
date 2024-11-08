@@ -114,7 +114,7 @@ class LaneMaskReader:
             white_ratio = white_pixels / bbox_area
             
             # 如果白色像素占比超过50%，则认为在该车道上
-            if white_ratio > 0.5:
+            if white_ratio > 0.3:
                 detected_lanes.append(lane_name)
         
         return detected_lanes

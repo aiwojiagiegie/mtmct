@@ -24,6 +24,7 @@ from utils.scipy_linear_assignment import linear_assignment
 from utils.general import check_img_size, non_max_suppression, scale_coords
 from utils.utils import letterbox, class_agnostic_nms, pairwise_tracks_dist
 from yolov10.ultralytics import YOLOv10
+from utils.laneUtils import LaneMaskReader
 
 
 class Cluster:
@@ -157,6 +158,9 @@ class MTMCT(object):
         # For feature extraction model
         self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
+        # 添加LaneMaskReader实例
+        self.lane_reader = LaneMaskReader()
+
         # Prepare ========================================================================================================
         # Prepare output folder
         self.output_dir = opt.output_dir
@@ -170,7 +174,7 @@ class MTMCT(object):
             # Prepare 1
             img_dir = os.path.join(opt.data_dir, cam) + '/frame/*'
             self.datasets[cam] = iter(LoadImages(img_dir, img_size=self.img_size, stride=self.stride))
-            self.trackers[cam] = BoTSORT(opt)
+            self.trackers[cam] = BoTSORT(opt,self.lane_reader)
             self.f_nums.append(self.datasets[cam].nf)
 
             # Prepare 2
@@ -243,7 +247,7 @@ class MTMCT(object):
             valid_cam[cam] = True
             temp_align_cam_fdx_ = self.temp_align[cam][fdx]
             path, img, img_ori, _ = self.datasets[cam].__next__(cam, temp_align_cam_fdx_)
-            # Check 这里检查是否有这样的图片存在文件夹中，如果没有则跳过然后到下一个摄像头中
+            # Check 这里检查是否有这样的图片存在文件夹中，如果没有则跳过然后到下一个摄像中
             if img is None:
                 valid_cam[cam] = False
                 continue
@@ -373,22 +377,28 @@ class MTMCT(object):
                     p_dists[idx] = 10
                     continue
 
-                # If the objects are not in overlapping region (i -> j)
-                # 根据摄像头与摄像头之间的overlap区域过滤
-                overlap_region = self.overlap_regions_cam2cam[online_tracks[i].cam][online_tracks[j].cam]
-                x1, y1, x2, y2 = online_tracks[i].x1y1x2y2.astype(np.int32)
-                y2 = y2 if y2 < 1080 else 1079
-                if overlap_region[y2, (x1 + x2) // 2] == 0:
+                # 检查两个轨迹的车道是否有交集
+                lanes_i = online_tracks[i].get_main_lanes()
+                lanes_j = online_tracks[j].get_main_lanes()
+                if not (lanes_i & lanes_j):  # 如果两个集合的交集为空
                     p_dists[idx] = 10
                     continue
-
-                # If the objects are not in overlapping region (j -> i)
-                overlap_region = self.overlap_regions_cam2cam[online_tracks[j].cam][online_tracks[i].cam]
-                x1, y1, x2, y2 = online_tracks[j].x1y1x2y2.astype(np.int32)
-                y2 = y2 if y2 < 1080 else 1079
-                if overlap_region[y2, (x1 + x2) // 2] == 0:
-                    p_dists[idx] = 10
-                    continue
+                #
+                # # If the objects are not in overlapping region (i -> j)
+                # overlap_region = self.overlap_regions_cam2cam[online_tracks[i].cam][online_tracks[j].cam]
+                # x1, y1, x2, y2 = online_tracks[i].x1y1x2y2.astype(np.int32)
+                # y2 = y2 if y2 < 1080 else 1079
+                # if overlap_region[y2, (x1 + x2) // 2] == 0:
+                #     p_dists[idx] = 10
+                #     continue
+                #
+                # # If the objects are not in overlapping region (j -> i)
+                # overlap_region = self.overlap_regions_cam2cam[online_tracks[j].cam][online_tracks[i].cam]
+                # x1, y1, x2, y2 = online_tracks[j].x1y1x2y2.astype(np.int32)
+                # y2 = y2 if y2 < 1080 else 1079
+                # if overlap_region[y2, (x1 + x2) // 2] == 0:
+                #     p_dists[idx] = 10
+                #     continue
 
     def filter_online_tracks(self, online_tracks_raw):
         online_tracks_filtered = {}
@@ -428,7 +438,13 @@ class MTMCT(object):
         start = time.time()
         online_tracks_raw = {}
         for cam in self.cams:
-            online_tracks_raw[cam] = self.trackers[cam].update(cam, detection[cam], feat[cam], self.temp_align)
+            # 直接将lane_reader实例传给update方法
+            online_tracks_raw[cam] = self.trackers[cam].update(
+                cam, 
+                detection[cam], 
+                feat[cam], 
+                self.temp_align # 新增参数
+            )
         self.total_times['MTSC'] += time.time() - start
         return online_tracks_raw
 
@@ -452,7 +468,7 @@ class MTMCT(object):
                     x1, y1 = round(xyxy[0].item()), round(xyxy[1].item())
                     x2, y2 = round(xyxy[2].item()), round(xyxy[3].item())
 
-                    # 根据ROI过滤掉不在ROI内的检测
+                    # 根据ROI过滤���不在ROI内的检测
                     target = self.roi_masks[self.cams[pdx]][
                         min(y2 + 1, self.img_h) - 1, (max(x1, 0) + min(x2 + 1, self.img_w)) // 2]
                     if target == 0:
@@ -654,7 +670,7 @@ if __name__ == '__main__':
             pickle.dump(mtmct, f)
         calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
     else:
-        opt.version = 6
+        opt.version = 8
         mtmct_version = f'version/v{opt.version}'
         outputs_mtmct_pkl = 'outputs/mtmct.pkl'
         main()

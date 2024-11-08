@@ -98,7 +98,7 @@ def find_adjacent_bbox(all_boxes, target_box):
 
 
 class BoTSORT(object):
-    def __init__(self, opt ):
+    def __init__(self, opt,lane_reader ):
         # Initialize
         self.tracked = []
         self.lost = []
@@ -111,6 +111,7 @@ class BoTSORT(object):
         self.frame_id = -1
         self.max_time_lost = int(opt.max_time_lost)
         self.temp_align = None
+        self.lane_reader = lane_reader
 
     def update(self, cam, detections, features, de_temp_align):
         """
@@ -204,10 +205,10 @@ class BoTSORT(object):
             det = detections_first[d]
 
             if track.state == TrackState.Tracked:
-                track.update(detections_first[d], self.frame_id)
+                track.update(detections_first[d], self.frame_id, self.lane_reader)
                 activated.append(track)
             else:
-                track.re_activate(det, self.frame_id, new_id=False)
+                track.re_activate(det, self.frame_id, new_id=False, lane_reader=self.lane_reader)
                 re_activated.append(track)
 
         # Step 2 - Second association, left tracks & low confidence detection boxes ====================================
@@ -243,11 +244,11 @@ class BoTSORT(object):
             det = detections_second[d]
 
             if track.state == TrackState.Tracked:
-                track.update(det, self.frame_id)
+                track.update(det, self.frame_id, self.lane_reader)
                 track.obs_history[-1][2] = self.opt.det_high_thresh+0.01
                 activated.append(track)
             else:
-                track.re_activate(det, self.frame_id, new_id=False)
+                track.re_activate(det, self.frame_id, new_id=False, lane_reader=self.lane_reader)
                 re_activated.append(track)
 
         # Find lost tracks
@@ -275,7 +276,7 @@ class BoTSORT(object):
 
         # Update state
         for t, d in matches:
-            unactivated[t].update(detections_first[d], self.frame_id)
+            unactivated[t].update(detections_first[d], self.frame_id, self.lane_reader)
             activated.append(unactivated[t])
 
         # Update state

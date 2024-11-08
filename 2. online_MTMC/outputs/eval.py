@@ -491,7 +491,7 @@ def my_print_result(summary):
             else:
                 print(format_str.format(key, baseline[key], value, difference,symbol, info[key]))
 if __name__ == '__main__':
-    detection_path = f'./result/version/v6.txt'
+    detection_path = f'./result/version/v7.txt'
     gt_path = './ground_truth_validation.txt'
     # calculate_results('ground_truth_validation.txt', f'ground_truth_validation.txt')
     calculate_results(gt_path, detection_path)
