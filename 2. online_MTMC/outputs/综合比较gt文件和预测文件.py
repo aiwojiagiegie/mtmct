@@ -1,6 +1,7 @@
 import numpy as np
 from collections import defaultdict
 from prettytable import PrettyTable
+import os
 
 from opts import opt
 
@@ -67,103 +68,118 @@ if __name__ == '__main__':
     gt_file = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/outputs/ground_truth_validation.txt'
     pred_file = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/outputs/result/version/v{version}.txt'
     baseline_file = 'result/baseline.txt'
-
-    all_matched_ids, gt_frame_ranges = compare_all_cars(gt_file, pred_file)
-    baseline_matched_ids, _ = compare_all_cars(gt_file, baseline_file)
-
-    # 创建表格，添加baseline列
-    table = PrettyTable()
-    table.field_names = ["   GT车辆ID   ", "   预测ID   ", "   baseline ID   ", "  相机ID  ", "  GT帧范围  ",
-                         "  预测帧范围  ", "  基准帧范围  "]
-
-    prev_gt_car_id = None
-    prev_baseline_id = None  # 添加这一行来跟踪上一个baseline ID
-    for gt_car_id, pred_info in all_matched_ids.items():
-        if prev_gt_car_id is not None:
-            table.add_row(["--------", "--------", "--------", "--------", "--------", "--------", "--------"])
-            prev_baseline_id = None  # 重置prev_baseline_id
-
-        baseline_info = baseline_matched_ids.get(gt_car_id, {})
-        pred_car_ids = list(pred_info.keys())
-        baseline_car_ids = list(baseline_info.keys())
-
-        if pred_car_ids or baseline_car_ids:
-            first_pred = True
-            processed_cameras = set()
-
-            # 处理预测结果
-            for pred_car_id, camera_info in pred_info.items():
-                first_camera = True
-                for camera_id, frame_range in sorted(camera_info.items()):
-                    processed_cameras.add(camera_id)
-                    gt_range = gt_frame_ranges[gt_car_id][camera_id]
-                    baseline_range = [-1, -1]
-                    baseline_id = ""
-
-                    # 查找对应的baseline结果
+    
+    # 创建输出文件路径
+    output_dir = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/outputs/result/version'
+    output_file = os.path.join(output_dir, f'v{version}', f'v{version}_comparison.txt')
+    if not os.path.exists(os.path.dirname(output_file)):
+        os.makedirs(os.path.dirname(output_file))
+    
+    # 将标准输出重定向到文件
+    try:
+        with open(output_file, 'w', encoding='utf-8') as f:
+            all_matched_ids, gt_frame_ranges = compare_all_cars(gt_file, pred_file)
+            baseline_matched_ids, _ = compare_all_cars(gt_file, baseline_file)
+            
+            # 打印表格
+            table = PrettyTable()
+            table.field_names = ["   GT车辆ID   ", "   预测ID   ", "   baseline ID   ", "  相机ID  ", "  GT帧范围  ",
+                                 "  预测帧范围  ", "  基准帧范围  "]
+            
+            prev_gt_car_id = None
+            prev_baseline_id = None  # 添加这一行来跟踪上一个baseline ID
+            for gt_car_id, pred_info in all_matched_ids.items():
+                if prev_gt_car_id is not None:
+                    table.add_row(["--------", "--------", "--------", "--------", "--------", "--------", "--------"])
+                    prev_baseline_id = None  # 重置prev_baseline_id
+                
+                baseline_info = baseline_matched_ids.get(gt_car_id, {})
+                pred_car_ids = list(pred_info.keys())
+                baseline_car_ids = list(baseline_info.keys())
+                
+                if pred_car_ids or baseline_car_ids:
+                    first_pred = True
+                    processed_cameras = set()
+                    
+                    # 处理预测结果
+                    for pred_car_id, camera_info in pred_info.items():
+                        first_camera = True
+                        for camera_id, frame_range in sorted(camera_info.items()):
+                            processed_cameras.add(camera_id)
+                            gt_range = gt_frame_ranges[gt_car_id][camera_id]
+                            baseline_range = [-1, -1]
+                            baseline_id = ""
+                            
+                            # 查找对应的baseline结果
+                            for b_id, b_camera_info in baseline_info.items():
+                                if camera_id in b_camera_info:
+                                    baseline_range = b_camera_info[camera_id]
+                                    baseline_id = b_id
+                                    break
+                            
+                            # 如果baseline_id与上一个相同，则显示为空字符串
+                            display_baseline_id = "" if baseline_id == prev_baseline_id else baseline_id
+                            prev_baseline_id = baseline_id
+                            
+                            if first_pred and first_camera:
+                                table.add_row([gt_car_id, pred_car_id, display_baseline_id, camera_id,
+                                               f"{int(gt_range[0])}-{int(gt_range[1])}",
+                                               f"{int(frame_range[0])}-{int(frame_range[1])}",
+                                               f"{int(baseline_range[0])}-{int(baseline_range[1])}" if baseline_range[
+                                                                                                           0] != -1 else "-"])
+                                first_pred = False
+                            elif first_camera:
+                                table.add_row(["", pred_car_id, display_baseline_id, camera_id,
+                                               f"{int(gt_range[0])}-{int(gt_range[1])}",
+                                               f"{int(frame_range[0])}-{int(frame_range[1])}",
+                                               f"{int(baseline_range[0])}-{int(baseline_range[1])}" if baseline_range[
+                                                                                                           0] != -1 else "-"])
+                            else:
+                                table.add_row(["", "", display_baseline_id, camera_id,
+                                               f"{int(gt_range[0])}-{int(gt_range[1])}",
+                                               f"{int(frame_range[0])}-{int(frame_range[1])}",
+                                               f"{int(baseline_range[0])}-{int(baseline_range[1])}" if baseline_range[
+                                                                                                           0] != -1 else "-"])
+                            first_camera = False
+                    
+                    # 处理仅在baseline中出现的相机
                     for b_id, b_camera_info in baseline_info.items():
-                        if camera_id in b_camera_info:
-                            baseline_range = b_camera_info[camera_id]
-                            baseline_id = b_id
-                            break
-
-                    # 如果baseline_id与上一个相同，则显示为空字符串
-                    display_baseline_id = "" if baseline_id == prev_baseline_id else baseline_id
-                    prev_baseline_id = baseline_id
-
-                    if first_pred and first_camera:
-                        table.add_row([gt_car_id, pred_car_id, display_baseline_id, camera_id,
-                                       f"{int(gt_range[0])}-{int(gt_range[1])}",
-                                       f"{int(frame_range[0])}-{int(frame_range[1])}",
-                                       f"{int(baseline_range[0])}-{int(baseline_range[1])}" if baseline_range[
-                                                                                                   0] != -1 else "-"])
-                        first_pred = False
-                    elif first_camera:
-                        table.add_row(["", pred_car_id, display_baseline_id, camera_id,
-                                       f"{int(gt_range[0])}-{int(gt_range[1])}",
-                                       f"{int(frame_range[0])}-{int(frame_range[1])}",
-                                       f"{int(baseline_range[0])}-{int(baseline_range[1])}" if baseline_range[
-                                                                                                   0] != -1 else "-"])
-                    else:
-                        table.add_row(["", "", display_baseline_id, camera_id,
-                                       f"{int(gt_range[0])}-{int(gt_range[1])}",
-                                       f"{int(frame_range[0])}-{int(frame_range[1])}",
-                                       f"{int(baseline_range[0])}-{int(baseline_range[1])}" if baseline_range[
-                                                                                                   0] != -1 else "-"])
-                    first_camera = False
-
-            # 处理仅在baseline中出现的相机
-            for b_id, b_camera_info in baseline_info.items():
-                for camera_id, baseline_range in sorted(b_camera_info.items()):
-                    if camera_id not in processed_cameras:
-                        gt_range = gt_frame_ranges[gt_car_id][camera_id]
-                        display_baseline_id = "" if b_id == prev_baseline_id else b_id
-                        prev_baseline_id = b_id
-                        table.add_row(["", "无匹配", display_baseline_id, camera_id,
-                                       f"{int(gt_range[0])}-{int(gt_range[1])}",
-                                       "-",
-                                       f"{int(baseline_range[0])}-{int(baseline_range[1])}"])
-        else:
-            gt_ranges = gt_frame_ranges[gt_car_id]
-            for camera_id, gt_range in sorted(gt_ranges.items()):
-                table.add_row([gt_car_id if camera_id == list(gt_ranges.keys())[0] else "",
-                               "无匹配", "无匹配", camera_id,
-                               f"{int(gt_range[0])}-{int(gt_range[1])}", "-", "-"])
-
-        prev_gt_car_id = gt_car_id
-
-    print(table)
-
-    # 统计信息
-    total_gt_cars = len(all_matched_ids)
-    matched_gt_cars = sum(1 for pred_ids in all_matched_ids.values() if pred_ids)
-    baseline_matched_cars = sum(1 for pred_ids in baseline_matched_ids.values() if pred_ids)
-    unmatched_gt_cars = total_gt_cars - matched_gt_cars
-
-    print(f"\n统计信息:")
-    print(f"总gt车辆数: {total_gt_cars}")
-    print(f"有匹配的gt车辆数: {matched_gt_cars}")
-    print(f"baseline匹配的gt车辆数: {baseline_matched_cars}")
-    print(f"未匹配的gt车辆数: {unmatched_gt_cars}")
-    print(f"匹配率: {matched_gt_cars / total_gt_cars * 100:.2f}%")
-    print(f"baseline匹配率: {baseline_matched_cars / total_gt_cars * 100:.2f}%")
+                        for camera_id, baseline_range in sorted(b_camera_info.items()):
+                            if camera_id not in processed_cameras:
+                                gt_range = gt_frame_ranges[gt_car_id][camera_id]
+                                display_baseline_id = "" if b_id == prev_baseline_id else b_id
+                                prev_baseline_id = b_id
+                                table.add_row(["", "无匹配", display_baseline_id, camera_id,
+                                               f"{int(gt_range[0])}-{int(gt_range[1])}",
+                                               "-",
+                                               f"{int(baseline_range[0])}-{int(baseline_range[1])}"])
+                else:
+                    gt_ranges = gt_frame_ranges[gt_car_id]
+                    for camera_id, gt_range in sorted(gt_ranges.items()):
+                        table.add_row([gt_car_id if camera_id == list(gt_ranges.keys())[0] else "",
+                                       "无匹配", "无匹配", camera_id,
+                                       f"{int(gt_range[0])}-{int(gt_range[1])}", "-", "-"])
+                
+                prev_gt_car_id = gt_car_id
+            
+            # 将表格输出到文件
+            print(table, file=f)
+            
+            # 统计信息输出到文件
+            total_gt_cars = len(all_matched_ids)
+            matched_gt_cars = sum(1 for pred_ids in all_matched_ids.values() if pred_ids)
+            baseline_matched_cars = sum(1 for pred_ids in baseline_matched_ids.values() if pred_ids)
+            unmatched_gt_cars = total_gt_cars - matched_gt_cars
+            
+            print(f"\n统计信息:", file=f)
+            print(f"总gt车辆数: {total_gt_cars}", file=f)
+            print(f"有匹配的gt车辆数: {matched_gt_cars}", file=f)
+            print(f"baseline匹配的gt车辆数: {baseline_matched_cars}", file=f)
+            print(f"未匹配的gt车辆数: {unmatched_gt_cars}", file=f)
+            print(f"匹配率: {matched_gt_cars / total_gt_cars * 100:.2f}%", file=f)
+            print(f"baseline匹配率: {baseline_matched_cars / total_gt_cars * 100:.2f}%", file=f)
+            
+            # 同时在控制台显示完成信息
+            print(f"比较结果已保存到: {output_file}")
+    except Exception as e:
+        print(f"写入文件时发生错误: {str(e)}")

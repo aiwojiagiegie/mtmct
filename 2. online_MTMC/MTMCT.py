@@ -272,55 +272,235 @@ class MTMCT(object):
         # Apply constraints
         self.filter_tracks_by_overlap(online_tracks, p_dists)
         # Clustering =================================================================================================
-        # Generate linkage matrix with hierarchical clustering
+        # 使用完全链接法(complete linkage)构建层次聚类的连接矩阵
+        # 输入p_dists: 压缩格式的距离矩阵，例如对于5个轨迹A,B,C,D,E之间的距离:
+        # p_dists = [0.1,   0.8,   0.5,   0.9,   0.7,   0.3,   0.6,   0.4,   0.2,   0.5]
+        #            A->B   A->C   A->D   A->E   B->C   B->D   B->E   C->D   C->E   D->E
+        
+        # 返回linkage_matrix: (n-1)×4的矩阵，每行代表一次合并操作
+        # 格式: [簇1编号, 簇2编号, 合并距离, 新簇中的样本数]
+        # 例如对于上述距离矩阵，返回结果可能是:
+        # [[0, 1, 0.1, 2],    # 第一次：合并A和B(距离0.1)，形成簇AB(2个样本)
+        #  [2, 4, 0.2, 2],    # 第二次：合并C和E(距离0.2)，形成簇CE(2个样本)
+        #  [5, 3, 0.4, 3],    # 第三次：合并簇CE和D(距离0.4)，形成簇CDE(3个样本)
+        #                      # 选择CE和D合并是因为:
+        #                      # 1. CE到D的距离 = max(C到D, E到D) = max(0.4, 0.5) = 0.4
+        #                      # 2. AB到D的距离 = max(A到D, B到D) = max(0.5, 0.3) = 0.5
+        #                      # 3. 0.4 < 0.5，所以优先合并CE和D
+        #  [6, 7, 0.8, 5]]    # 第四次：合并簇AB和簇CDE(距离0.8)，形成最终簇ABCDE(5个样本)
+        
+        # 编号说明:
+        # - 原始轨迹编号：A=0, B=1, C=2, D=3, E=4
+        # - 新簇编号：从N开始(N为原始样本数)，即从5开始
+        # - 第一次合并后AB簇编号为5
+        # - 第二次合并后CE簇编号为6
+        # - 第三次合并后CDE簇编号为7
+        #
+        # 距离计算（完全链接法）：
+        # - 两个簇之间的距离 = 簇间最远两点的距离
+        # - 例如：CE到D的距离 = max(C到D的距离, E到D的距离) = max(0.4, 0.5) = 0.4
+
+        # method='complete'表示使用完全链接法：
+        # 两个簇之间的距离定义为它们中最远的两个点之间的距离
+        # 例如：当合并簇AB和簇CDE时，距离为max(A->C,A->D,A->E,B->C,B->D,B->E)=0.8
         linkage_matrix = linkage(p_dists, method='complete')
+        # 从linkage_matrix中提取所有唯一的距离值并排序
+        # 例如，对于5个轨迹的linkage_matrix:
+        # [[0, 1, 0.1, 2],    # 第一次合并：A和B
+        #  [2, 4, 0.2, 2],    # 第二次合并：C和E
+        #  [5, 3, 0.4, 3],    # 第三次合并：CE和D
+        #  [6, 7, 0.8, 5]]    # 第四次合并：AB和CDE
+        
+        # 1. linkage_matrix[:, 2] 提取第3列(即所有合并距离):
+        #    [0.1, 0.2, 0.4, 0.8]
+        
+        # 2. list()将numpy数组转换为Python列表:
+        #    [0.1, 0.2, 0.4, 0.8]
+        
+        # 3. set()创建集合去除重复值(本例中没有重复值，但其他情况可能有):
+        #    {0.1, 0.2, 0.4, 0.8}
+        
+        # 4. 再次list()将集合转回列表(因为set无序):
+        #    [0.1, 0.2, 0.4, 0.8]
+        
+        # 5. np.sort()对列表进行排序，axis=None确保返回一维数组:
+        #    [0.1, 0.2, 0.4, 0.8]
+        
+        # 最终得到ranked_dists：所有可能的合并距离阈值，从小到大排序
+        # 这些阈值将用于后续尝试不同的聚类方案：
+        # - 0.1: 只合并非常相似的轨迹
+        # - 0.2: 合并相似度稍低的轨迹
+        # - 0.4: 合并相似度中等的轨迹
+        # - 0.8: 合并相似度较低的轨迹
         ranked_dists = np.sort(list(set(list(linkage_matrix[:, 2]))), axis=None)
         # Observe clusters with adjusting a distance threshold and calculate dunn index
-        clusters, dunn_indices, c_dists = [], [], squareform(p_dists)
+        # 初始化三个列表/矩阵
+        clusters = []          # 存储不同阈值下的聚类结果
+        dunn_indices = []      # 存储每个聚类结果的Dunn指数(评估聚类质量)
+        c_dists = squareform(p_dists)  # 将压缩距离矩阵转换为完整的方阵形式
+        # 示例: 如果ranked_dists = [0.1, 0.2, 0.4, 0.8]
+        # range(2, 5) = [2, 3, 4]，即从后往前尝试不同的阈值:
+        # rdx=2: ranked_dists[-2] = 0.4
+        # rdx=3: ranked_dists[-3] = 0.2
+        # rdx=4: ranked_dists[-4] = 0.1
         for rdx in range(2, ranked_dists.shape[0] + 1):
+            # 只考虑小于匹配阈值的距离
+            # 例如：如果opt.mtmc_match_thr = 0.5
+            # 则只考虑距离<=0.5的合并方案
             if ranked_dists[-rdx] <= opt.mtmc_match_thr:
-                clusters.append(fcluster(linkage_matrix, ranked_dists[-rdx] + 1e-5, criterion='distance') - 1)
-                dunn_indices.append(dunn(clusters[-1], c_dists))
+                # fcluster: 使用给定阈值对层次聚类结果进行切割，获得聚类分配结果
+                # ranked_dists[-rdx] + 1e-5: 添加小量以确保稳定性
+                # criterion='distance': 基��距离进行切割
+                # -1: 将聚类ID从1-based转换为0-based
+                # fcluster根据距离阈值对层次聚类结果进行切割，返回每个样本的簇标签
+                # 示例: 假设有5个轨迹A,B,C,D,E，linkage_matrix为:
+                # [[0, 1, 0.1, 2],    # 合并A和B，距离0.1
+                #  [2, 4, 0.2, 2],    # 合并C和E，距离0.2 
+                #  [5, 3, 0.4, 3],    # 合并CE和D，距离0.4
+                #  [6, 7, 0.8, 5]]    # 合并AB和CDE，距离0.8
+                # 
+                # 当ranked_dists[-rdx]=0.3时(介于0.2和0.4之间):
+                # 返回[0,0,1,2,1] -> AB一组(id=0)，CE一组(id=1)，D单独一组(id=2)
+                #
+                # 当ranked_dists[-rdx]=0.5时(介于0.4和0.8之间):
+                # 返回[0,0,1,1,1] -> AB一组(id=0)，CDE一组(id=1)
+                #
+                # 当ranked_dists[-rdx]=0.9时(大于0.8):
+                # 返回[0,0,0,0,0] -> 所有轨迹在一组(id=0)
+                new_cluster = fcluster(linkage_matrix, ranked_dists[-rdx] + 1e-5, criterion='distance') - 1
+                clusters.append(new_cluster)
+                # 计算当前聚类结果的Dunn指数并存储
+                # Dunn指数衡量聚类的紧密度和分离度：
+                # - 更高的值表示更好的聚类结果
+                # - 计算方式：最小簇间距离 / 最大簇内距离
+                # 计算当前聚类结果的Dunn指数
+                # 示例: 对聚类结果[0,0,1,2,1] (AB一组，CE一组，D单独组)的Dunn指数计算
+                #
+                # 假设c_dists距离矩阵为:
+                # [    A    B    C    D    E
+                #  A [0.0, 0.1, 0.7, 0.6, 0.8],  # A的距离
+                #  B [0.1, 0.0, 0.7, 0.5, 0.7],  # B的距离
+                #  C [0.7, 0.7, 0.0, 0.4, 0.2],  # C的距离
+                #  D [0.6, 0.5, 0.4, 0.0, 0.3],  # D的距离
+                #  E [0.8, 0.7, 0.2, 0.3, 0.0]   # E的距离
+                # ]
+                #
+                # 1. 计算簇内距离(intra-cluster distances):
+                #    簇0(AB): dist(A,B) = 0.1
+                #    簇1(CE): dist(C,E) = 0.2
+                #    簇2(D):  没有簇内距离(单点)
+                #    最大簇内距离 = max(0.1, 0.2) = 0.2
+                #
+                # 2. 计算簇间距离(inter-cluster distances):
+                #    簇0到簇1: min(dist(A,C), dist(A,E), dist(B,C), dist(B,E))
+                #             = min(0.7, 0.8, 0.7, 0.7) = 0.7
+                #    簇0到簇2: min(dist(A,D), dist(B,D))
+                #             = min(0.6, 0.5) = 0.5
+                #    簇1到簇2: min(dist(C,D), dist(E,D))
+                #             = min(0.4, 0.3) = 0.3
+                #    最小簇间距离 = min(0.7, 0.5, 0.3) = 0.3
+                #
+                # 3. Dunn指数计算:
+                #    Dunn = 最小簇间距离 / 最大簇内距离
+                #         = 0.3 / 0.2 
+                #         = 1.5
+                #
+                # 这个Dunn指数表明:
+                # - 簇内距离最大为0.2，说明簇内对象相对紧密
+                # - 簇间距离最小为0.3，说明簇间有一定分离度
+                # - 指数大于1说明聚类结果可以接受，但分离度不是特别理想
+                new_dunn = dunn(clusters[-1], c_dists)
+                dunn_indices.append(new_dunn)
+        # 示例输出：
+        # 假设ranked_dists = [0.1, 0.2, 0.4, 0.8]，mtmc_match_thr = 0.5
+        # 则可能得到：
+        # clusters = [
+        #   [0,0,1,1,1],  # 使用阈值0.4的聚类结果：AB在一组，CDE在一组
+        #   [0,0,1,2,1],  # 使用阈值0.2的聚类结果：AB一组，CE一组，D单独一组
+        #   [0,0,1,2,3]   # 使用阈值0.1的聚类结果：AB一组，其他各自一组
+        # ]
+        # dunn_indices = [0.4, 0.6, 0.8]  # 每个聚类结果对应的Dunn指数
+        # 选择最佳聚类结果
         if len(clusters) == 0:
+            # 如果没有找到任何有效的聚类结果(所有距离都大于mtmc_match_thr)
+            # 则使用最小的距离阈值(ranked_dists[0])进行聚类
+            # 减去一个很小的值(1e-5)是为了确保稳定性
+            # criterion='distance'表示基于距离进行切割
+            # -1是将聚类ID从1-based转换为0-based
             cluster = fcluster(linkage_matrix, ranked_dists[0] - 1e-5, criterion='distance') - 1
         else:
-            # Choose the most connected cluster except inappropriate pairs
-            # Get the index of the dunn indices where the values suddenly jump.
+            # 如果有多个有效的聚类结果，选择Dunn指数突变点对应的聚类方案
+            
+            # 在dunn_indices开头插入0作为基准点
+            # 例如：原始dunn_indices = [0.4, 0.6, 0.8]
+            # 插入后变为：[0, 0.4, 0.6, 0.8]
             dunn_indices.insert(0, 0)
+            
+            # np.diff()计算相邻元素的差值
+            # 例如：[0, 0.4, 0.6, 0.8] -> [0.4, 0.2, 0.2]
+            # np.argmax()找出差值最大的位置
+            # 这表示Dunn指数突然显著提升的位置，即聚类质量有明显改善的阈值
             pos = np.argmax(np.diff(dunn_indices))
+            
+            # 使用该位置对应的聚类结果
+            # 例如：如果pos=1，表示选择clusters[1]对应的聚类方案
+            # 这种方案在保持聚类质量的同时，避免过度分割
             cluster = clusters[pos]
         # Run Multi-target Multi-Camera Tracking =====================================================================
         # Initialize
         num_cluster = len(list(set(list(cluster))))
-        # Assign global id to new tracks using other tracks in the same cluster
+
+        # 遍历每个聚类，为新轨迹分配全局ID
         for cam_index in range(num_cluster):
+            # 获取当前聚类中所有轨迹的索引
+            # 例如：cluster=[0,0,1,1,2] 当cam_index=1时
+            # track_idx将包含值为1的所有索引位置：[2,3]
             track_idx = np.where(cluster == cam_index)[0]
 
-            # Check index and global id of tracks in same cluster
+            # 收集当前聚类中已有全局ID的轨迹信息
             infos = []
             for tdx in track_idx:
+                # 如果轨迹已经有全局ID，将其索引和全局ID保存
                 if online_tracks[tdx].global_id is not None:
                     infos.append([tdx, online_tracks[tdx].global_id])
 
-            # If some tracks in the cluster already has global id, assign same global id to new tracks
+            # 如果当前聚类中存在已有全局ID的轨迹
             if len(infos) > 0:
-                # Assign global id, Collect tracks, Update feature
+                # 为聚类中没有全局ID的轨迹分配ID
                 for tdx in track_idx:
                     if online_tracks[tdx].global_id is None:
-                        # Sort and get global id with the node with minimum distance
+                        # 根据与当前轨迹的距离对已有全局ID的轨迹进行排序
+                        # c_dists[tdx, x[0]]表示当前轨迹与已有ID轨迹的距离
+                        # 距离越小表示越可能是同一个目标
                         sorted_infos = sorted(copy.deepcopy(infos), key=lambda x: c_dists[tdx, x[0]])
+                        
+                        # 遍历排序后的轨迹信息
                         for info in sorted_infos:
+                            # 检查该全局ID是否已在当前摄像头中使用
+                            # 避免在同一个摄像头中出现相同的全局ID
                             if online_tracks[info[0]].global_id not in online_global_ids[online_tracks[tdx].cam]:
-                                # Assign global id, Collect
+                                # 分配全局ID
                                 online_tracks[tdx].global_id = info[1]
+                                # 如果该全局ID对应的轨迹簇存在，则添加当前轨迹
                                 if info[1] in self.clusters_dict:
                                     self.clusters_dict[info[1]].add_track(online_tracks[tdx])
                                 break
-        # Get remaining current tracks
+        # 获取所有还未分配全局ID的轨迹
+        # 使用列表推导式筛选出global_id为None的轨迹
         remain_tracks = [track for track in online_tracks if track.global_id is None]
-        # Calculate pairwise distance between previous clusters and current clusters
+
+        # 计算已有轨迹簇(clusters_dict)和剩余未分配轨迹(remain_tracks)之间的成对距离
+        # clusters_dict: 包含所有已分配全局ID的轨迹簇的字典，key为全局ID
+        # remain_tracks: 待分配全局ID的轨迹列表
+        # fdx: 当前帧号，用于时间相关的距离计算
+        # metric='cosine': 使用余弦距离作为度量标准
+        # 返回一个距离矩阵 dists[i,j]表示第i个已有簇与第j个待分配轨迹的距离
         dists = pairwise_tracks_dist(self.clusters_dict, remain_tracks, fdx, metric='cosine')
-        # Run Hungarian algorithm
+
+        # 使用匈牙利算法(Hungarian Algorithm)求解最优匹配问题
+        # 该算法能在O(n^3)时间内找到最优的一对一匹配
+        # 返回最优匹配的索引对列表 indices = [[cluster_idx1, track_idx1], [cluster_idx2, track_idx2], ...]
+        # 每个匹配对表示一个已有簇和一个待分配轨迹的最优匹配
         indices = linear_assignment(dists)
         # Match with thresholding
         for row, col in indices:
@@ -389,6 +569,7 @@ class MTMCT(object):
                 if overlap_region[y2, (x1 + x2) // 2] == 0:
                     p_dists[idx] = 10
                     continue
+                pass
 
     def filter_online_tracks(self, online_tracks_raw):
         online_tracks_filtered = {}
@@ -654,7 +835,7 @@ if __name__ == '__main__':
             pickle.dump(mtmct, f)
         calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
     else:
-        opt.version = 6
+        # opt.version = 6
         mtmct_version = f'version/v{opt.version}'
         outputs_mtmct_pkl = 'outputs/mtmct.pkl'
         main()
