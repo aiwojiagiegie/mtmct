@@ -506,18 +506,22 @@ class MTMCT(object):
         for row, col in indices:
             if dists[row, col] <= opt.mtmc_match_thr \
                     and list(self.clusters_dict.keys())[row] not in online_global_ids[remain_tracks[col].cam]:
-                # Assign global id, Collect track
+                # 条件满足时:
+                # 1. 将已有簇的全局ID分配给新轨迹
                 remain_tracks[col].global_id = list(self.clusters_dict.keys())[row]
+                # 2. 将新轨迹添加到已有簇中
                 self.clusters_dict[list(self.clusters_dict.keys())[row]].add_track(remain_tracks[col])
         # If not matched newly starts
+        # 如果新轨迹没有匹配到已有簇，则为其分配新的全局ID
         for remain_track in remain_tracks:
             if remain_track.global_id is None:
-                # Assign global id, Collect track
+                # 1. 为新轨迹分配新的全局ID
                 remain_track.global_id = self.next_global_id
+                # 2. 创建新的簇
                 self.clusters_dict[self.next_global_id] = Cluster()
+                # 3. 将新轨迹添加到新簇中
                 self.clusters_dict[self.next_global_id].add_track(remain_track)
-
-                # Increase
+                # 4. 增加全局ID计数器
                 self.next_global_id += 1
         # Delete too old cluster
         del_key = [key for key in self.clusters_dict.keys() if
@@ -528,7 +532,7 @@ class MTMCT(object):
         # Logging
         for track in online_tracks:
             left, top, w, h = track.tlwh
-
+            confidence  = track.confidence
             # Expand box, Since gt boxes are not tightly annotated around objects and quite larger than objects
             cx, cy = left + w / 2, top + h / 2
             w, h = w * 1.45, h * 1.45
@@ -537,9 +541,9 @@ class MTMCT(object):
             # Filter with size, Since gt does not include small boxes
             if w * h / self.img_w / self.img_h < 0.003 or 0.3 < w * h / self.img_w / self.img_h:
                 continue
-            format = '%d %d %d %d %d %d %d -1 -1' % (
+            format = '%d %d %d %d %d %d %d %.2f -1' % (
                 int(track.cam[-1]), track.global_id, self.temp_align[track.cam][fdx], int(left), int(top), int(w),
-                int(h))
+                int(h) , confidence)
             self.result.append(format)
 
     def filter_tracks_by_overlap(self, online_tracks, p_dists):

@@ -64,10 +64,10 @@ def compare_all_cars(gt_file, pred_file):
 
 if __name__ == '__main__':
     version = opt.version
-    version = '6'
+    version = '2'
     gt_file = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/outputs/ground_truth_validation.txt'
     pred_file = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/outputs/result/version/v{version}.txt'
-    baseline_file = 'result/baseline.txt'
+    baseline_file = 'result/version/baseline.txt'
     
     # 创建输出文件路径
     output_dir = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/outputs/result/version'

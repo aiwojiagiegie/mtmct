@@ -174,7 +174,7 @@ def draw_bboxes_all_in(video_path, bbox_data_gt, bbox_data_pred, output_path, ca
         frame_number += 1
         if frame_number in bbox_data_gt:
             for bbox in bbox_data_gt[frame_number]:
-                left, top, width, height, car_id = bbox
+                left, top, width, height, car_id, confidence = bbox
                 # 绘制边界框
                 cv2.rectangle(frame, (left, top), (left + width, top + height), car_bbox_colors[car_id], 2)
                 # 绘制文本
@@ -182,11 +182,25 @@ def draw_bboxes_all_in(video_path, bbox_data_gt, bbox_data_pred, output_path, ca
 
         if frame_number in bbox_data_pred:
             for bbox in bbox_data_pred[frame_number]:
-                left, top, width, height, car_id = bbox
+                left, top, width, height, car_id, confidence = bbox
                 # 绘制边界框
                 cv2.rectangle(frame, (left, top), (left + width, top + height), pred_bbox_colors[car_id], 2)
                 # 绘制文本
-                cv2.putText(frame, f'pred_id: {car_id}', (left, top + height - 5), 0, 1, (255, 255, 255), 2, 16)
+                # 获取图片尺寸
+                frame_height, frame_width = frame.shape[:2]
+
+                # 计算文本位置，确保在图片范围内
+                text = f'pred_id: {car_id} conf: {confidence:.2f}'
+                # getTextSize返回文本大小和baseline
+                (text_width, text_height), baseline = cv2.getTextSize(text, 0, 1, 2)
+
+                # 计算文本的x坐标：不超出图片右边界
+                text_x = min(left, frame_width - text_width)
+                # 计算文本的y坐标：不超出图片上下边界
+                text_y = min(max(top + height - 5, text_height), frame_height - baseline)
+
+                # 绘制文本
+                cv2.putText(frame, text, (text_x, text_y), 0, 1, (255, 255, 255), 2, 16)
 
         # 将帧写入输出视频
         out.write(frame)
@@ -293,13 +307,14 @@ def get_bbox_data(txt_path):
             top = int(parts[4])
             width = int(parts[5])
             height = int(parts[6])
+            confidence = float(parts[7])
             if car_id not in car_bbox_colors:
                 car_bbox_colors[car_id] = random_color(car_id)
             if camera_id not in bbox_data:
                 bbox_data[camera_id] = {}
             if frame_number not in bbox_data[camera_id]:
                 bbox_data[camera_id][frame_number] = []
-            bbox_data[camera_id][frame_number].append((left, top, width, height, car_id))
+            bbox_data[camera_id][frame_number].append((left, top, width, height, car_id, confidence))
     return bbox_data, car_bbox_colors
 
 
@@ -323,8 +338,8 @@ def generate_depart():
 
 def generate_all_in():
     # 删除压缩文件夹
-    if os.path.exists(f'debug/{version}/allIn/压缩'):
-        shutil.rmtree(f'debug/{version}/allIn/压缩')
+    if os.path.exists(f'result/version/{version}/allIn/压缩'):
+        shutil.rmtree(f'result/version/{version}/allIn/压缩')
     bbox_info, gt_bbox_colors = get_bbox_data(gt_path)
     target_info, pred_bbox_colors = get_bbox_data(detection_path)
     all_in_bbox_info = {}
@@ -336,7 +351,7 @@ def generate_all_in():
         all_in_bbox_info[camera_id]['pred'] = frame_bboxes
     
     for camera_id, frame_bboxes in all_in_bbox_info.items():
-        output_path = f'debug/{version}/allIn/{camera_id}.mp4'
+        output_path = f'result/version/{version}/allIn/{camera_id}.mp4'
         draw_bboxes_all_in(f'../../dataset/AIC19/validation/S02/c00{camera_id}/vdo.avi',
                            frame_bboxes['gt'],
                            frame_bboxes['pred'],
@@ -423,7 +438,7 @@ def compress_video(video_path):
 
 
 if __name__ == '__main__':
-    opt.version='1'
+    # opt.version='1'
     version = 'v'+str(opt.version)
     detection_path = f'./result/version/{version}.txt'
     gt_path = 'ground_truth_validation.txt'

@@ -207,4 +207,4 @@ class Track(BaseTrack):
         return ret
 
     def __repr__(self):
-        return 'OT_{}_({}-{})_{}_{}'.format(self.track_id, self.start_frame, self.end_frame, self.state,self.global_id)
+        return 'OT_{}_({}-{})_{}_{}_{}'.format(self.track_id, self.start_frame, self.end_frame, self.state,self.global_id,self.cam)
