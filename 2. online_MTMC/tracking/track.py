@@ -2,6 +2,7 @@ import copy
 import numpy as np
 import utils.utils as utils
 from tracking.kalman_filter import KalmanFilter
+from utils.laneUtils import lane_mask_reader
 
 
 class TrackState(object):
@@ -120,7 +121,7 @@ class Track(BaseTrack):
         # Update, Save
         self.mean, self.covariance = self.kalman_filter.initiate(self.cxcywh)
         self.obs_history = [[frame_id, self.cxcywh.copy(), self.confidence, self.curr_feat.copy(),
-                             self.mean.copy(), self.covariance.copy()]]
+                             self.mean.copy(), self.covariance.copy(), []]]
 
         # Set
         self.frame_id = frame_id
@@ -128,14 +129,34 @@ class Track(BaseTrack):
         self.state = TrackState.Tracked
         self.is_activated = True if frame_id == 0 else self.is_activated
 
-    def update(self, new_det, frame_id):
+    def update(self, new_det, frame_id, lane_reader=lane_mask_reader):
         self.frame_id = frame_id
 
         # Update
         self.mean, self.covariance = self.kalman_filter.update(self.mean, self.covariance,
                                                                new_det.cxcywh, new_det.confidence)
-        self.obs_history.append([frame_id, new_det.cxcywh.copy(), new_det.confidence, copy.deepcopy(new_det.curr_feat),
-                                 self.mean.copy(), self.covariance.copy()])
+        
+        # 获取当前车道信息
+        current_lanes = []
+        if lane_reader is not None:
+            bbox = [
+                int(self.mean[0] - self.mean[2]/2),  # x1
+                int(self.mean[1] - self.mean[3]/2),  # y1
+                int(self.mean[0] + self.mean[2]/2),  # x2
+                int(self.mean[1] + self.mean[3]/2)   # y2
+            ]
+            current_lanes = lane_reader.get_lanes_for_bbox(bbox, self.cam)
+        
+        # 在历史记录中加入车道信息
+        self.obs_history.append([
+            frame_id,
+            new_det.cxcywh.copy(),
+            new_det.confidence,
+            copy.deepcopy(new_det.curr_feat),
+            self.mean.copy(),
+            self.covariance.copy(),
+            current_lanes  # 新增字段
+        ])
 
         if new_det.curr_feat is not None:
             self.update_features(new_det.curr_feat)
@@ -145,12 +166,32 @@ class Track(BaseTrack):
         self.confidence = new_det.confidence
         self.state = TrackState.Tracked
 
-    def re_activate(self, new_det, frame_id, new_id=False):
+    def re_activate(self, new_det, frame_id, new_id=False, lane_reader=lane_mask_reader):
         # Update
         self.mean, self.covariance = self.kalman_filter.update(self.mean, self.covariance,
                                                                new_det.cxcywh, new_det.confidence)
-        self.obs_history.append([frame_id, new_det.cxcywh.copy(), new_det.confidence, new_det.curr_feat.copy(),
-                                 self.mean.copy(), self.covariance.copy()])
+        
+        # 获取当前车道信息
+        current_lanes = []
+        if lane_reader is not None:
+            bbox = [
+                int(self.mean[0] - self.mean[2]/2),  # x1
+                int(self.mean[1] - self.mean[3]/2),  # y1
+                int(self.mean[0] + self.mean[2]/2),  # x2
+                int(self.mean[1] + self.mean[3]/2)   # y2
+            ]
+            current_lanes = lane_reader.get_lanes_for_bbox(bbox, self.cam)
+        
+        # 在历史记录中加入车道信息
+        self.obs_history.append([
+            frame_id,
+            new_det.cxcywh.copy(),
+            new_det.confidence,
+            new_det.curr_feat.copy(),
+            self.mean.copy(),
+            self.covariance.copy(),
+            current_lanes  # 新增字段
+        ])
 
         if new_det.curr_feat is not None:
             self.update_features(new_det.curr_feat)
@@ -208,3 +249,43 @@ class Track(BaseTrack):
 
     def __repr__(self):
         return 'OT_{}_({}-{})_{}_{}_{}'.format(self.track_id, self.start_frame, self.end_frame, self.state,self.global_id,self.cam)
+
+    def get_main_lanes(self, recent_frames=None, start_threshold=0.5, min_threshold=0.1, step=0.1):
+        """
+        获取轨迹经过的主要车道，通过逐步降低阈值直到找到结果
+        :param recent_frames: 只考虑最近的帧数，如果为None则考虑所有历史记录
+        :param start_threshold: 开始的阈值，默认0.5
+        :param min_threshold: 最低接受的阈值，默认0.1
+        :param step: 每次降低的阈值步长，默认0.1
+        :return: 主要车道集合
+        """
+        # 获取要分析的历史记录
+        if recent_frames is not None:
+            history = self.obs_history[-recent_frames:]
+        else:
+            history = self.obs_history
+            
+        # 统计每个车道出现的次数
+        lane_counts = {}
+        total_frames = len(history)
+        
+        for record in history:
+            lanes = record[6]  # 第7个元素是车道信息
+            for lane in lanes:
+                lane_counts[lane] = lane_counts.get(lane, 0) + 1
+        
+        # 从高阈值开始逐步降低直到找到结果
+        for threshold in np.arange(start_threshold, min_threshold - step/2, -step):
+            main_lanes = {
+                lane for lane, count in lane_counts.items() 
+                if count / total_frames >= threshold
+            }
+            if main_lanes:  # 如果找到非空结果，立即返回
+                return main_lanes
+                
+        return set()  # 如果所有阈值都没有结果，返回空集合
+
+    @property
+    def main_lanes(self):
+        return self.get_main_lanes()
+

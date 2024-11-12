@@ -13,6 +13,8 @@ from tqdm import tqdm
 from outputs.eval import calculate_results
 from opts import opt
 from torchvision import transforms
+
+from utils.laneUtils import LaneMaskReader
 from utils.sklearn_dunn import dunn
 from tracking.bot_sort import BoTSORT
 from utils.datasets import LoadImages
@@ -52,6 +54,25 @@ class Cluster:
     def cam_list(self):
         return [track.cam for track in self.tracks]
 
+    @property 
+    def main_lanes(self):
+        # 初始化为空集
+        common_lanes = set()
+        
+        # 遍历所有轨迹
+        for i, track in enumerate(self.tracks):
+            # 获取当前轨迹的车道集合 - 修改这里，直接访问属性而不是调用
+            lanes = track.main_lanes
+            if not lanes:  # 如果当前轨迹没有车道,跳过
+                continue
+                
+            # 如果是第一个有效的车道集合,直接赋值
+            if not common_lanes:
+                common_lanes = lanes
+            else:  # 否则取交集
+                common_lanes.intersection_update(lanes)
+                
+        return common_lanes
 
 def prepare_align(cams, f_nums):
     temp_align = {}
@@ -156,7 +177,6 @@ class MTMCT(object):
         self.feat_ext_model = feat_ext_model.cuda().eval().half()
         # For feature extraction model
         self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-
         # Prepare ========================================================================================================
         # Prepare output folder
         self.output_dir = opt.output_dir

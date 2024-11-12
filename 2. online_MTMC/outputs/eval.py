@@ -19,6 +19,8 @@ import warnings
 
 from tqdm import tqdm
 
+from opts import opt
+
 warnings.filterwarnings("ignore")
 
 
@@ -491,7 +493,8 @@ def my_print_result(summary):
             else:
                 print(format_str.format(key, baseline[key], value, difference,symbol, info[key]))
 if __name__ == '__main__':
-    detection_path = f'./result/version/v1.txt'
+    version = opt.version
+    detection_path = f'./result/version/v{version}.txt'
     gt_path = './ground_truth_validation.txt'
     # calculate_results('ground_truth_validation.txt', f'ground_truth_validation.txt')
     calculate_results(gt_path, detection_path)

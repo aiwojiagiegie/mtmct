@@ -160,6 +160,9 @@ def pairwise_tracks_dist(clusters_dict, tracks, fdx, metric):
             # 如果轨迹簇的结束帧就是当前帧，说明轨迹仍在跟踪中，跳过
             if fdx - clusters_dict[global_id].end_frame == 0:
                 continue
+            # 假如两个轨迹的车道集合没有交集，跳过
+            if not clusters_dict[global_id].main_lanes & track.main_lanes:
+                continue
 
             # 跳过来自相同摄像头的轨迹
             # 因为同一个目标不应该在同一个摄像头中出现多次
