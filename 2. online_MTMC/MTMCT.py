@@ -504,13 +504,22 @@ class MTMCT(object):
         indices = linear_assignment(dists)
         # Match with thresholding
         for row, col in indices:
-            if dists[row, col] <= opt.mtmc_match_thr \
-                    and list(self.clusters_dict.keys())[row] not in online_global_ids[remain_tracks[col].cam]:
+            # 1. 检查距离阈值
+            distance_match = dists[row, col] <= opt.mtmc_match_thr
+            
+            # 2. 检查全局ID是否已在该摄像头中使用
+            cluster_keys = list(self.clusters_dict.keys())
+            current_cluster_id = cluster_keys[row]
+            current_cam = remain_tracks[col].cam
+            id_not_in_cam = current_cluster_id not in online_global_ids[current_cam]
+            
+            # 3. 组合条件判断
+            if distance_match and id_not_in_cam:
                 # 条件满足时:
                 # 1. 将已有簇的全局ID分配给新轨迹
-                remain_tracks[col].global_id = list(self.clusters_dict.keys())[row]
+                remain_tracks[col].global_id = current_cluster_id
                 # 2. 将新轨迹添加到已有簇中
-                self.clusters_dict[list(self.clusters_dict.keys())[row]].add_track(remain_tracks[col])
+                self.clusters_dict[current_cluster_id].add_track(remain_tracks[col])
         # If not matched newly starts
         # 如果新轨迹没有匹配到已有簇，则为其分配新的全局ID
         for remain_track in remain_tracks:
