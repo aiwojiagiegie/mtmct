@@ -274,11 +274,14 @@ class Track(BaseTrack):
             for lane in lanes:
                 lane_counts[lane] = lane_counts.get(lane, 0) + 1
         
+        # 计算置信度
+        lane_confidence = {lane: count / total_frames for lane, count in lane_counts.items()}
+        
         # 从高阈值开始逐步降低直到找到结果
         for threshold in np.arange(start_threshold, min_threshold - step/2, -step):
             main_lanes = {
-                lane for lane, count in lane_counts.items() 
-                if count / total_frames >= threshold
+                lane for lane, conf in lane_confidence.items() 
+                if conf >= threshold
             }
             if main_lanes:  # 如果找到非空结果，立即返回
                 return main_lanes

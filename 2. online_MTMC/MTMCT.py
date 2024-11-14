@@ -525,7 +525,7 @@ class MTMCT(object):
         # Match with thresholding
         for row, col in indices:
             # 1. 检查距离阈值
-            distance_match = dists[row, col] <= opt.mtmc_match_thr
+            distance_match = dists[row, col] <= opt.sec_mtmc_match_thr
             
             # 2. 检查全局ID是否已在该摄像头中使用
             cluster_keys = list(self.clusters_dict.keys())
