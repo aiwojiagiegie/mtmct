@@ -158,23 +158,33 @@ def pairwise_tracks_dist(clusters_dict, tracks, fdx, metric):
             # 跳过当前帧的轨迹簇
             # 只与"丢失"的轨迹簇进行匹配（避免MTSC删除）
             # 如果轨迹簇的结束帧就是当前帧，说明轨迹仍在跟踪中，跳过
-            if fdx - clusters_dict[global_id].end_frame == 0:
+            cluster = clusters_dict[global_id]
+            if fdx - cluster.end_frame == 0:
                 continue
+
             # 假如两个轨迹的车道集合没有交集，跳过
-            if not clusters_dict[global_id].main_lanes & track.main_lanes:
-                continue
+            # if not cluster.main_lanes & track.main_lanes:
+            #     continue
 
             # 跳过来自相同摄像头的轨迹
             # 因为同一个目标不应该在同一个摄像头中出现多次
-            if track.cam in clusters_dict[global_id].cam_list:
+            if track.cam in cluster.cam_list:
+                continue
+
+            # 获取轨迹簇和新轨迹的区域信息
+            cluster_zones = cluster.main_zone  # 返回集合
+            track_zone = track.main_zone      # 返回字符串
+            
+            # 如果没有区域信息，跳过
+            # if not cluster_zones or not track_zone:
+            #     continue
+            
+            # 如果新轨迹不是middle区域，且其区域类型已经在轨迹簇中存在，则跳过
+            if track_zone != 'middle' and track_zone in cluster_zones:
                 continue
 
             # 计算特征距离
-            # clusters_dict[global_id].get_feature(): 获取轨迹簇的特征
-            # track.get_feature(): 获取新轨迹的特征
-            # cdist: 计算两组特征之间的距离
-            # np.min: 取最小距离作为最终距离
-            dists[row, col] = np.min(cdist(clusters_dict[global_id].get_feature(),
+            dists[row, col] = np.min(cdist(cluster.get_feature(),
                                          track.get_feature(mode=opt.get_feat_mode)[np.newaxis, :], metric))
 
     dists = np.clip(dists, 0, 1) if metric == 'cosine' else dists

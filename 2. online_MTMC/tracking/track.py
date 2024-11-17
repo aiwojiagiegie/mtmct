@@ -3,6 +3,7 @@ import numpy as np
 import utils.utils as utils
 from tracking.kalman_filter import KalmanFilter
 from utils.laneUtils import lane_mask_reader
+from utils.zoneUtils import zone_mask_reader
 
 
 class TrackState(object):
@@ -121,7 +122,7 @@ class Track(BaseTrack):
         # Update, Save
         self.mean, self.covariance = self.kalman_filter.initiate(self.cxcywh)
         self.obs_history = [[frame_id, self.cxcywh.copy(), self.confidence, self.curr_feat.copy(),
-                             self.mean.copy(), self.covariance.copy(), []]]
+                             self.mean.copy(), self.covariance.copy(), [], []]]
 
         # Set
         self.frame_id = frame_id
@@ -129,16 +130,17 @@ class Track(BaseTrack):
         self.state = TrackState.Tracked
         self.is_activated = True if frame_id == 0 else self.is_activated
 
-    def update(self, new_det, frame_id, lane_reader=lane_mask_reader):
+    def update(self, new_det, frame_id, lane_reader=lane_mask_reader, zone_reader=zone_mask_reader):
         self.frame_id = frame_id
 
         # Update
         self.mean, self.covariance = self.kalman_filter.update(self.mean, self.covariance,
                                                                new_det.cxcywh, new_det.confidence)
         
-        # 获取当前车道信息
+        # 获取当前车道信息和区域信息
         current_lanes = []
-        if lane_reader is not None:
+        current_zones = []
+        if lane_reader is not None and zone_reader is not None:
             bbox = [
                 int(self.mean[0] - self.mean[2]/2),  # x1
                 int(self.mean[1] - self.mean[3]/2),  # y1
@@ -146,8 +148,13 @@ class Track(BaseTrack):
                 int(self.mean[1] + self.mean[3]/2)   # y2
             ]
             current_lanes = lane_reader.get_lanes_for_bbox(bbox, self.cam)
+            # 对每个车道获取其区域类型
+            for lane in current_lanes:
+                zones = zone_reader.get_zone_type(bbox, self.cam, lane)
+                if zones:  # 如果有区域信息，取第一个（因为一个车道只对应一种区域）
+                    current_zones.append(zones[0])
         
-        # 在历史记录中加入车道信息
+        # 在历史记录中加入车道和区域信息
         self.obs_history.append([
             frame_id,
             new_det.cxcywh.copy(),
@@ -155,7 +162,8 @@ class Track(BaseTrack):
             copy.deepcopy(new_det.curr_feat),
             self.mean.copy(),
             self.covariance.copy(),
-            current_lanes  # 新增字段
+            current_lanes,
+            current_zones  # 新增字段
         ])
 
         if new_det.curr_feat is not None:
@@ -166,14 +174,15 @@ class Track(BaseTrack):
         self.confidence = new_det.confidence
         self.state = TrackState.Tracked
 
-    def re_activate(self, new_det, frame_id, new_id=False, lane_reader=lane_mask_reader):
+    def re_activate(self, new_det, frame_id, new_id=False, lane_reader=lane_mask_reader, zone_reader=zone_mask_reader):
         # Update
         self.mean, self.covariance = self.kalman_filter.update(self.mean, self.covariance,
                                                                new_det.cxcywh, new_det.confidence)
         
-        # 获取当前车道信息
+        # 获取当前车道信息和区域信息
         current_lanes = []
-        if lane_reader is not None:
+        current_zones = []
+        if lane_reader is not None and zone_reader is not None:
             bbox = [
                 int(self.mean[0] - self.mean[2]/2),  # x1
                 int(self.mean[1] - self.mean[3]/2),  # y1
@@ -181,8 +190,13 @@ class Track(BaseTrack):
                 int(self.mean[1] + self.mean[3]/2)   # y2
             ]
             current_lanes = lane_reader.get_lanes_for_bbox(bbox, self.cam)
+            # 对每个车道获取其区域类型
+            for lane in current_lanes:
+                zones = zone_reader.get_zone_type(bbox, self.cam, lane)
+                if zones:  # 如果有区域信息，取第一个（因为一个车道只对应一种区域）
+                    current_zones.append(zones[0])
         
-        # 在历史记录中加入车道信息
+        # 在历史记录中加入车道和区域信息
         self.obs_history.append([
             frame_id,
             new_det.cxcywh.copy(),
@@ -190,7 +204,8 @@ class Track(BaseTrack):
             new_det.curr_feat.copy(),
             self.mean.copy(),
             self.covariance.copy(),
-            current_lanes  # 新增字段
+            current_lanes,
+            current_zones  # 新增字段
         ])
 
         if new_det.curr_feat is not None:
@@ -291,4 +306,39 @@ class Track(BaseTrack):
     @property
     def main_lanes(self):
         return self.get_main_lanes()
+
+    def get_main_zone_type(self, recent_frames=None) -> str:
+        """
+        获取轨迹的主要区域类型
+        :param recent_frames: 只考虑最近的帧数，如果为None则考虑所有历史记录
+        :return: 区域类型 ('entry'/'exit'/'middle')
+        """
+        # 获取要分析的历史记录
+        if recent_frames is not None:
+            history = self.obs_history[-recent_frames:]
+        else:
+            history = self.obs_history
+            
+        # 统计每个区域类型出现的次数
+        zone_counts = {'entry': 0, 'exit': 0, 'middle': 0}
+        
+        for record in history:
+            zones = record[7]  # 第8个元素是区域信息
+            for zone in zones:
+                if zone in zone_counts:
+                    zone_counts[zone] += 1
+        
+        # 返回出现次数最多的区域类型
+        if not any(zone_counts.values()):  # 如果没有任何区域信息
+            return ''
+            
+        return max(zone_counts.items(), key=lambda x: x[1])[0]
+
+    @property
+    def main_zone(self) -> str:
+        """
+        获取轨迹的主要区域类型
+        :return: 区域类型 ('entry'/'exit'/'middle')
+        """
+        return self.get_main_zone_type()
 

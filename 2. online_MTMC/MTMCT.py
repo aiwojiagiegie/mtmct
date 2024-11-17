@@ -74,6 +74,22 @@ class Cluster:
                 
         return common_lanes
 
+    @property
+    def main_zone(self) -> set:
+        """
+        获取轨迹簇中所有轨迹的区域类型集合
+        :return: 区域类型集合，例如 {'entry', 'middle'}
+        """
+        zones = set()
+        
+        # 遍历所有轨迹
+        for track in self.tracks:
+            zone = track.main_zone
+            if zone:  # 如果有区域信息，添加到集合中
+                zones.add(zone)
+                
+        return zones
+
 def prepare_align(cams, f_nums):
     temp_align = {}
     for cam in cams:
