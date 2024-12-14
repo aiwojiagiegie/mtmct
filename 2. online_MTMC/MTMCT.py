@@ -851,8 +851,6 @@ def main():
     calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
     return mtmct
 
-# 模型配置文件
-model_yaml_path = "./yolov10/ultralytics/cfg/models/v10/yolov10n.yaml"
 # 数据集配置文件
 data_yaml_path = './yolov10/datasets/multi_class/data.yaml'
 # 预训练模型
@@ -861,6 +859,8 @@ if __name__ == '__main__':
     if opt.train:
         pretrain_type = opt.pretrain_type
         pre_model_name = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/yolov10/models/yolov10{pretrain_type}.pt'
+        # 模型配置文件
+        model_yaml_path = f"./yolov10/ultralytics/cfg/models/v10/yolov10{pretrain_type}.yaml"
         # 加载预训练模型
         # model = YOLOv10(model_yaml_path).load(pre_model_name)
         model = YOLOv10(model_yaml_path)
