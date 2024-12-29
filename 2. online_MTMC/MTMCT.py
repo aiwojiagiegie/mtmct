@@ -25,7 +25,7 @@ from models.feature_extractor import FeatureExtractor
 from utils.scipy_linear_assignment import linear_assignment
 from utils.general import check_img_size, non_max_suppression, scale_coords
 from utils.utils import letterbox, class_agnostic_nms, pairwise_tracks_dist
-from yolov10.ultralytics import YOLOv10
+from yolov11.ultralytics import YOLO
 
 
 class Cluster:
@@ -177,9 +177,9 @@ class MTMCT(object):
         # self.det_model = attempt_load(opt.det_weights + opt.det_name + '.pt')
         # self.det_model = self.det_model.cuda().eval().half()
         if YOLOv10_detect_model_path is None:
-            self.YOLOv10_detect_model = YOLOv10(opt.yolo10_model)
+            self.YOLOv10_detect_model = YOLO(opt.yolo10_model)
         else:
-            self.YOLOv10_detect_model = YOLOv10(YOLOv10_detect_model_path)
+            self.YOLOv10_detect_model = YOLO(YOLOv10_detect_model_path)
         # For time measurement
         self.total_times = {'Det': 0, 'Ext': 0, 'MTSC': 0, 'MTMC': 0}
         self.cams = sorted(os.listdir(opt.data_dir))
@@ -858,30 +858,30 @@ data_yaml_path = './yolov10/datasets/multi_class/data.yaml'
 if __name__ == '__main__':
     if opt.train:
         pretrain_type = opt.pretrain_type
-        pre_model_name = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/yolov10/models/yolov10{pretrain_type}.pt'
+        pre_model_name = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/yolov11/models/yolov11{pretrain_type}.pt'
         # 模型配置文件
-        model_yaml_path = f"./yolov10/ultralytics/cfg/models/v10/yolov10{pretrain_type}.yaml"
+        model_yaml_path = f"/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/yolov11/ultralytics/cfg/models/11/yolo11.yaml"
         # 加载预训练模型
         # model = YOLOv10(model_yaml_path).load(pre_model_name)
-        model = YOLOv10(model_yaml_path)
+        model = YOLO(model_yaml_path)
         pre_model_name_last = pre_model_name.split('/')[-1]
         # 训练模型
         epochs = opt.epoch
         batch = opt.batch
         # 生成一个六位的随机数
         random_suffix = random.randint(100000, 999999)
-        save_path = f'UA-DETRAC_pre/model_name_{pre_model_name_last}/epochs_{epochs}/batch_{batch}/{random_suffix}'
+        save_path = f'./yolov11/runs/model_name_{pre_model_name_last}/epochs_{epochs}/batch_{batch}/{random_suffix}'
         results = model.train(data=data_yaml_path,
                               epochs=epochs,
                               batch=batch,
                               name=f"{save_path}", device=opt.gpu)
-        outputs_mtmct_pkl = f'../../yolov10/runs/detect/{save_path}/mtmct.pkl'
+        outputs_mtmct_pkl = f'./yolov11/runs/detect/{save_path}/mtmct.pkl'
         mtmct_version = f'version/{save_path}/v1'
-        mtmct = MTMCT(opt,f'../../yolov10/runs/detect/{save_path}/weights/best.pt')
+        mtmct = MTMCT(opt,f'./runs/detect/{save_path}/weights/best.pt')
         with torch.no_grad():
             mtmct.run_mtmct()
-        with open(outputs_mtmct_pkl, 'wb') as f:
-            pickle.dump(mtmct, f)
+        # with open(outputs_mtmct_pkl, 'wb') as f:
+        #     pickle.dump(mtmct, f)
         calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
     else:
         # opt.version = 6
