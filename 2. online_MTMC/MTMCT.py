@@ -7,6 +7,8 @@ import dill as pickle
 import cv2
 import time
 import copy
+
+import requests
 import torch
 import numpy as np
 from tqdm import tqdm
@@ -15,6 +17,7 @@ from opts import opt
 from torchvision import transforms
 
 from utils.laneUtils import LaneMaskReader
+from utils.notify import send_feishu_message
 from utils.sklearn_dunn import dunn
 from tracking.bot_sort import BoTSORT
 from utils.datasets import LoadImages
@@ -386,7 +389,7 @@ class MTMCT(object):
             if ranked_dists[-rdx] <= opt.mtmc_match_thr:
                 # fcluster: 使用给定阈值对层次聚类结果进行切割，获得聚类分配结果
                 # ranked_dists[-rdx] + 1e-5: 添加小量以确保稳定性
-                # criterion='distance': 基��距离进行切割
+                # criterion='distance': 基于距离进行切割
                 # -1: 将聚类ID从1-based转换为0-based
                 # fcluster根据距离阈值对层次聚类结果进行切割，返回每个样本的簇标签
                 # 示例: 假设有5个轨迹A,B,C,D,E，linkage_matrix为:
@@ -882,7 +885,19 @@ if __name__ == '__main__':
             mtmct.run_mtmct()
         with open(outputs_mtmct_pkl, 'wb') as f:
             pickle.dump(mtmct, f)
-        calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
+        ans = calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
+        # 格式化消息内容
+        message = "MTMCT训练配置:\n"
+        message += f"预训练模型: yolov10{pretrain_type}.pt\n" 
+        message += f"训练轮数: {epochs}\n"
+        message += f"Batch Size: {batch}\n"
+        message += f"保存路径: {save_path}\n\n"
+        message += "MTMCT评估结果:\n"
+        message += f"IDF1(跨摄像头跟踪准确率): {ans['idf1']:.2%}\n"
+        message += f"MOTA(整体跟踪准确率): {ans['mota']:.2%}\n"
+        message += f"IDP(识别精确度): {ans['idp']:.2%}\n" 
+        message += f"IDR(识别召回率): {ans['idr']:.2%}\n"
+        send_feishu_message(message)
     else:
         # opt.version = 6
         mtmct_version = f'version/v{opt.version}'
