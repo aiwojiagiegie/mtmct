@@ -885,13 +885,13 @@ if __name__ == '__main__':
             mtmct.run_mtmct()
         # with open(outputs_mtmct_pkl, 'wb') as f:
         #     pickle.dump(mtmct, f)
-        calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
-        with open(outputs_mtmct_pkl, 'wb') as f:
-            pickle.dump(mtmct, f)
+        # calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
+        # with open(outputs_mtmct_pkl, 'wb') as f:
+        #     pickle.dump(mtmct, f)
         ans = calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
         # 格式化消息内容
         message = "MTMCT训练配置:\n"
-        message += f"预训练模型: yolov10{pretrain_type}.pt\n"
+        message += f"预训练模型: yolov11{pretrain_type}.pt\n"
         message += f"训练轮数: {epochs}\n"
         message += f"Batch Size: {batch}\n"
         message += f"保存路径: {save_path}\n\n"
