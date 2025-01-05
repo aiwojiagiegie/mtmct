@@ -28,7 +28,7 @@ from models.feature_extractor import FeatureExtractor
 from utils.scipy_linear_assignment import linear_assignment
 from utils.general import check_img_size, non_max_suppression, scale_coords
 from utils.utils import letterbox, class_agnostic_nms, pairwise_tracks_dist
-from yolov11.ultralytics import YOLO
+from ultralytics import YOLO
 
 
 class Cluster:

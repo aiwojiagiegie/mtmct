@@ -1,0 +1,7 @@
+cython_bbox
+lap
+scikit-learn
+pytrec_eval
+motmetrics
+dill
+numpy==1.24.3
