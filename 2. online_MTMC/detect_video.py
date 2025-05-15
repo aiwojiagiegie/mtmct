@@ -55,7 +55,7 @@ def read_video_frames(video_path,output_path):
 
 
 if __name__ == '__main__':
-    model = YOLOv10('/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/preliminary/det_weights/my/best_multiple3.pt')
+    model = YOLOv10('/root/mtmct/2. online_MTMC/preliminary/det_weights/my/best_multiple3.pt')
     for i in range(41,47):
-        video_path = f"/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real/{i}/{i}.mp4"
-        read_video_frames(video_path,f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/debug/detect/{i}.mp4')
+        video_path = f"/root/mtmct/dataset/HST/real/{i}/{i}.mp4"
+        read_video_frames(video_path,f'/root/mtmct/2. online_MTMC/output_HST/debug/detect/{i}.mp4')

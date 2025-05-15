@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 
 class ZoneMaskReader:
-    DEFAULT_PATH = "/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/preliminary/devied_zones/AIC19_2"
+    DEFAULT_PATH = "/root/mtmct/2. online_MTMC/preliminary/devied_zones/AIC19_2"
     
     def __init__(self, root_path: str = DEFAULT_PATH):
         """

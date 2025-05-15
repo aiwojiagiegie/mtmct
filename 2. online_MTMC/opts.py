@@ -17,7 +17,7 @@ class Opts:
 
         # Options for feature extraction
         self.parser.add_argument('--feat_ext_name', type=str, default='resnet50_ibn_a')
-        self.parser.add_argument('--feat_ext_weights', type=str, default='./preliminary/feat_ext_weights/')
+        self.parser.add_argument('--feat_ext_weights', type=str, default='/root/mtmct/2. online_MTMC/preliminary/feat_ext_weights/')
         self.parser.add_argument('--avg_type', type=str, default='gap')
         self.parser.add_argument('--patch_size', type=int, default=[384, 384], help='inference size (pixels)')
 
@@ -35,16 +35,16 @@ class Opts:
         self.parser.add_argument("--sec_mtmc_match_thr", type=float, default=0.65)
 
         # Others
-        self.parser.add_argument('--data_dir', type=str, default='/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/AIC19/validation/S02')
-        self.parser.add_argument('--output_dir', type=str, default='./outputs/result/')
+        self.parser.add_argument('--data_dir', type=str, default='/root/mtmct/dataset/AIC19/validation/S02')
+        self.parser.add_argument('--output_dir', type=str, default='/root/mtmct/2. online_MTMC/outputs/result/')
         self.parser.add_argument('--min_box_size', type=int, default=0.001, help='minimum box size')
         self.parser.add_argument('--img_ori_size', type=int, default=[1080, 1920], help='original image size (pixels)')
         self.parser.add_argument('--version', type=int, default=4, help='original image size (pixels)')
-        self.parser.add_argument("-train", help="是否训练新的模型", dest="train", type=bool, default="")
+        self.parser.add_argument("-train", help="是否训练新的模型", dest="train", type=bool, default=False)
         self.parser.add_argument("-epoch", help="训练轮次", dest="epoch", type=int, default="300")
         self.parser.add_argument("-batch", help="训练batch", dest="batch", type=int, default="2")
         self.parser.add_argument("-gpu", help="训练用的卡id", dest="gpu", type=int, default="0")
-        self.parser.add_argument("-yolo10_model", help="yolo模型权重", dest="yolo10_model", type=str, default="/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/yolov11/yolo11n.pt")
+        self.parser.add_argument("-yolo10_model", help="yolo模型权重", dest="yolo10_model", type=str, default="/root/mtmct/2. online_MTMC/preliminary/det_weights/my/best_multiple3.pt")
         self.parser.add_argument("-pretrain_type", help="yolo预训练模型类型", dest="pretrain_type", type=str, default="s")
 
     def parse(self):

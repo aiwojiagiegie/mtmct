@@ -65,12 +65,12 @@ def compare_all_cars(gt_file, pred_file):
 if __name__ == '__main__':
     version = opt.version
     version = '2'
-    gt_file = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/outputs/ground_truth_validation.txt'
-    pred_file = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/outputs/result/version/v{version}.txt'
+    gt_file = '/root/mtmct/2. online_MTMC/outputs/ground_truth_validation.txt'
+    pred_file = f'/root/mtmct/2. online_MTMC/outputs/result/version/v{version}.txt'
     baseline_file = 'result/version/baseline.txt'
     
     # 创建输出文件路径
-    output_dir = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/outputs/result/version'
+    output_dir = f'/root/mtmct/2. online_MTMC/outputs/result/version'
     output_file = os.path.join(output_dir, f'v{version}', f'v{version}_comparison.txt')
     if not os.path.exists(os.path.dirname(output_file)):
         os.makedirs(os.path.dirname(output_file))

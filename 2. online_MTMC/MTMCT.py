@@ -213,11 +213,11 @@ class MTMCT(object):
             self.f_nums.append(self.datasets[cam].nf)
 
             # Prepare 2
-            self.roi_masks[cam] = cv2.imread('./preliminary/rois/%s.png' % cam, cv2.IMREAD_GRAYSCALE)
+            self.roi_masks[cam] = cv2.imread('/root/mtmct/2. online_MTMC/preliminary/rois/%s.png' % cam, cv2.IMREAD_GRAYSCALE)
             self.overlap_regions_cam2cam[cam] = {}
             for cam_ in self.cams:
                 self.overlap_regions_cam2cam[cam][cam_] = cv2.imread(
-                    './preliminary/overlap_zones/%s_%s.png' % (cam, cam_),
+                    '/root/mtmct/2. online_MTMC/preliminary/overlap_zones/%s_%s.png' % (cam, cam_),
                     cv2.IMREAD_GRAYSCALE) if cam_ != cam else None
         self.temp_align = prepare_align(self.cams, self.f_nums)
         for tracker in self.trackers.values():
@@ -851,7 +851,7 @@ def debug():
 def main():
     mtmct = run()
     # mtmct = read_pkl_from_file(outputs_mtmct_pkl)
-    calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
+    calculate_results('/root/mtmct/2. online_MTMC/outputs/ground_truth_validation.txt', mtmct.result_path)
     return mtmct
 
 # 数据集配置文件
@@ -859,11 +859,12 @@ data_yaml_path = './yolov10/datasets/multi_class/data.yaml'
 # 预训练模型
 
 if __name__ == '__main__':
+    opt.train = False
     if opt.train:
         pretrain_type = opt.pretrain_type
-        pre_model_name = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/yolov11/models/yolov11{pretrain_type}.pt'
+        pre_model_name = f'/root/mtmct/2. online_MTMC/yolov11/models/yolov11{pretrain_type}.pt'
         # 模型配置文件
-        model_yaml_path = f"/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/yolov11/ultralytics/cfg/models/11/yolo11.yaml"
+        model_yaml_path = f"/root/mtmct/2. online_MTMC/yolov11/ultralytics/cfg/models/11/yolo11.yaml"
         # 加载预训练模型
         # model = YOLOv10(model_yaml_path).load(pre_model_name)
         model = YOLO(model_yaml_path)

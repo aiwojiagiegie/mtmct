@@ -235,7 +235,7 @@ class TrajectoryLaneAnalyzer:
 def main():
     print("开始车道轨迹分析...")
     
-    gt_path = "/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/outputs/ground_truth_validation.txt"
+    gt_path = "/root/mtmct/2. online_MTMC/outputs/ground_truth_validation.txt"
     analyzer = TrajectoryLaneAnalyzer(gt_path)
     
     # 分析轨迹

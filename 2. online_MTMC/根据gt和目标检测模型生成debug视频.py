@@ -116,7 +116,7 @@ def process_video_wrapper(args):
     process_video(video_path, output_path, gt_file_path, model)
 
 if __name__ == '__main__':
-    model = YOLOv10('/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/preliminary/det_weights/my/best_multiple3.pt')
+    model = YOLOv10('/root/mtmct/2. online_MTMC/preliminary/det_weights/my/best_multiple3.pt')
     gt_file_path = '2. online_MTMC/outputs/ground_truth_validation.txt'
     video_dir_path = 'dataset/AIC19/validation/S02'
     output_dir_path = '2. online_MTMC/outputs/根据gt和目标检测模型生成合并在一起的视频'

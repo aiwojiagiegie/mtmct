@@ -1,5 +1,5 @@
-# /home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/yolov10/datasets2/multi_class
-# 视频路径：/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real
+# /root/mtmct/2. online_MTMC/yolov10/datasets2/multi_class
+# 视频路径：/root/mtmct/dataset/HST/real
 # test_gt.txt
 # 根据视频，还有test_gt.txt，将视频中的帧提取出来，放入到multi_class中 所有的帧，分成11份，10分放入train文件夹，1份放入val文件夹，以coco格式
 
@@ -10,9 +10,9 @@ import random
 from tqdm import tqdm
 
 # 定义路径
-base_video_path = "/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/AIC19/validation/S02/"
-gt_file = "/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/outputs/ground_truth_validation.txt"  # 请确保此路径正确
-output_path = "/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/yolov10/datasets2/multi_class"
+base_video_path = "/root/mtmct/dataset/AIC19/validation/S02/"
+gt_file = "/root/mtmct/2. online_MTMC/outputs/ground_truth_validation.txt"  # 请确保此路径正确
+output_path = "/root/mtmct/2. online_MTMC/yolov10/datasets2/multi_class"
 
 # 创建输出目录
 os.makedirs(os.path.join(output_path, "train", "images"), exist_ok=True)
