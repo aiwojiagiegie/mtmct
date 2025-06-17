@@ -163,8 +163,8 @@ def pairwise_tracks_dist(clusters_dict, tracks, fdx, metric):
                 continue
 
             # 假如两个轨迹的车道集合没有交集，跳过
-            # if not cluster.main_lanes & track.main_lanes:
-            #     continue
+            if not cluster.main_lanes & track.main_lanes:
+                continue
 
             # 跳过来自相同摄像头的轨迹
             # 因为同一个目标不应该在同一个摄像头中出现多次
@@ -180,8 +180,8 @@ def pairwise_tracks_dist(clusters_dict, tracks, fdx, metric):
             #     continue
             
             # 如果新轨迹不是middle区域，且其区域类型已经在轨迹簇中存在，则跳过
-            if track_zone != 'middle' and track_zone in cluster_zones:
-                continue
+            # if track_zone != 'middle' and track_zone in cluster_zones:
+            #     continue
 
             # 计算特征距离
             dists[row, col] = np.min(cdist(cluster.get_feature(),

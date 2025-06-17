@@ -305,7 +305,7 @@ class Track(BaseTrack):
 
     @property
     def main_lanes(self):
-        return self.get_main_lanes()
+        return self.get_main_lanes(4)
 
     def get_main_zone_type(self, recent_frames=None) -> str:
         """
@@ -340,5 +340,5 @@ class Track(BaseTrack):
         获取轨迹的主要区域类型
         :return: 区域类型 ('entry'/'exit'/'middle')
         """
-        return self.get_main_zone_type()
+        return self.get_main_zone_type(22)
 

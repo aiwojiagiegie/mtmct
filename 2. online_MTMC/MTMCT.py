@@ -861,12 +861,12 @@ data_yaml_path = './yolov10/datasets/multi_class/data.yaml'
 if __name__ == '__main__':
     if opt.train:
         pretrain_type = opt.pretrain_type
-        pre_model_name = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/yolov11/models/yolov11{pretrain_type}.pt'
+        pre_model_name = f'yolo12{pretrain_type}.pt'
         # 模型配置文件
-        model_yaml_path = f"/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/yolov11/ultralytics/cfg/models/11/yolo11.yaml"
+        # model_yaml_path = f"/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/yolov11/ultralytics/cfg/models/11/yolo11.yaml"
         # 加载预训练模型
         # model = YOLOv10(model_yaml_path).load(pre_model_name)
-        model = YOLO(model_yaml_path)
+        model = YOLO(pre_model_name)
         pre_model_name_last = pre_model_name.split('/')[-1]
         # 训练模型
         epochs = opt.epoch
@@ -891,7 +891,7 @@ if __name__ == '__main__':
         ans = calculate_results('outputs/ground_truth_validation.txt', mtmct.result_path)
         # 格式化消息内容
         message = "MTMCT训练配置:\n"
-        message += f"预训练模型: yolov11{pretrain_type}.pt\n"
+        message += f"预训练模型: {pre_model_name}\n"
         message += f"训练轮数: {epochs}\n"
         message += f"Batch Size: {batch}\n"
         message += f"保存路径: {save_path}\n\n"
