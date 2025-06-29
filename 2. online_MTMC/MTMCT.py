@@ -4,6 +4,9 @@ import random
 
 import dill as pickle
 
+# Import numpy compatibility patch BEFORE any package that uses motmetrics
+from monkeypatch_numpy import *
+
 import cv2
 import time
 import copy
@@ -25,7 +28,7 @@ from models.feature_extractor import FeatureExtractor
 from utils.scipy_linear_assignment import linear_assignment
 from utils.general import check_img_size, non_max_suppression, scale_coords
 from utils.utils import letterbox, class_agnostic_nms, pairwise_tracks_dist
-from yolov10.ultralytics import YOLOv10
+from ultralytics import YOLO
 from ReId import ReId
 import torchvision.ops
 
@@ -117,9 +120,9 @@ class MTMCT(object):
         # self.det_model = attempt_load(opt.det_weights + opt.det_name + '.pt')
         # self.det_model = self.det_model.cuda().eval().half()
         if YOLOv10_detect_model_path is None:
-            self.YOLOv10_detect_model = YOLOv10(opt.yolo10_model)
+            self.YOLOv10_detect_model = YOLO(opt.yolo10_model)
         else:
-            self.YOLOv10_detect_model = YOLOv10(YOLOv10_detect_model_path)
+            self.YOLOv10_detect_model = YOLO(YOLOv10_detect_model_path)
         # For time measurement
         self.total_times = {'Det': 0, 'Ext': 0, 'MTSC': 0, 'MTMC': 0}
         self.cams = sorted(os.listdir(opt.data_dir))
@@ -160,13 +163,13 @@ class MTMCT(object):
             self.f_nums.append(self.datasets[cam].nf)
 
             # Prepare 2
-            self.roi_masks[cam] = cv2.imread('/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real/%s/%s.png' % (cam,cam), cv2.IMREAD_GRAYSCALE)
+            self.roi_masks[cam] = cv2.imread(f'../dataset/HST/real/{cam}/{cam}.png', cv2.IMREAD_GRAYSCALE)
             self.overlap_regions_cam2cam[cam] = {}
             for cam_ in self.cams:
                 if cam_ == cam:
                     self.overlap_regions_cam2cam[cam][cam_] = None
                     continue
-                overlap_file = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/preliminary/overlap_zones/HST/{cam}_{cam_}.png'
+                overlap_file = f'./preliminary/overlap_zones/HST/{cam}_{cam_}.png'
                 if os.path.exists(overlap_file):
                     self.overlap_regions_cam2cam[cam][cam_] = cv2.imread(overlap_file, cv2.IMREAD_GRAYSCALE)
                 else:
@@ -197,14 +200,14 @@ class MTMCT(object):
         self.current_frame = {}
         self.total_frames = {}  # 新增：存储每个摄像头的总帧数
         for cam in self.cams:
-            video_path = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real/{cam}/{cam}.mp4'
+            video_path = f'../dataset/HST/real/{cam}/{cam}.mp4'
             self.video_captures[cam] = cv2.VideoCapture(video_path)
             self.current_frame[cam] = 0
             self.total_frames[cam] = int(self.video_captures[cam].get(cv2.CAP_PROP_FRAME_COUNT))  # 获取总帧数
 
     def load_background_images(self):
         background_images = {}
-        base_path = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real/'
+        base_path = '../dataset/HST/real/'
         for cam in self.cams:
             img_ori_path = os.path.join(base_path, cam, f'{cam}.png')
             if os.path.exists(img_ori_path):
@@ -263,7 +266,7 @@ class MTMCT(object):
 
     def draw_debug_video(self, batch_img, detection, valid_cam, video_writers):
         if opt.draw_debug:
-            base_path = '/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/dataset/HST/real'
+            base_path = '../dataset/HST/real'
             output_path = './output_HST/debug生成视频文件 新训练的模型'
             for idx, det in enumerate(self.cams):
                 if valid_cam[det]:
@@ -875,7 +878,7 @@ class MTMCT(object):
     def load_lane_images(self):
         lane_images = {}
         for cam in self.cams:
-            image_path = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/preliminary/devied_zones/{cam}.png'
+            image_path = f'./preliminary/devied_zones/{cam}.png'
             lane_images[cam] = cv2.imread(image_path)
         return lane_images
 
@@ -955,7 +958,7 @@ def debug():
 def main():
     mtmct = run()
     # mtmct = read_pkl_from_file(outputs_mtmct_pkl)
-    calculate_results('/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/output_HST/test_gt.txt', mtmct.result_path)
+    calculate_results('./output_HST/test_gt.txt', mtmct.result_path)
     return mtmct
 
 # 模型配置文件
@@ -967,10 +970,10 @@ data_yaml_path = './yolov10/datasets/multi_class/data.yaml'
 if __name__ == '__main__':
     if opt.train:
         pretrain_type = opt.pretrain_type
-        pre_model_name = f'/home/chatmindai/project/zhangkun/Fast_Online_MTMCT/2. online_MTMC/yolov10/models/yolov10{pretrain_type}.pt'
+        pre_model_name = f'./yolov10/models/yolov10{pretrain_type}.pt'
         # 加载预训练模型
         # model = YOLOv10(model_yaml_path).load(pre_model_name)
-        model = YOLOv10(model_yaml_path)
+        model = YOLO(model_yaml_path)
         pre_model_name_last = pre_model_name.split('/')[-1]
         # 训练模型
         epochs = opt.epoch
@@ -982,9 +985,9 @@ if __name__ == '__main__':
                               epochs=epochs,
                               batch=batch,
                               name=f"{save_path}", device=opt.gpu)
-        outputs_mtmct_pkl = f'../../yolov10/runs/detect/{save_path}/mtmct.pkl'
+        outputs_mtmct_pkl = f'./yolov10/runs/detect/{save_path}/mtmct.pkl'
         mtmct_version = f'version/{save_path}/v1'
-        mtmct = MTMCT(opt,f'../../yolov10/runs/detect/{save_path}/weights/best.pt')
+        mtmct = MTMCT(opt,f'./yolov10/runs/detect/{save_path}/weights/best.pt')
         with torch.no_grad():
             mtmct.run_mtmct()
         with open(outputs_mtmct_pkl, 'wb') as f:

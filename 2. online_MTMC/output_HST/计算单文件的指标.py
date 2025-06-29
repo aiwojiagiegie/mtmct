@@ -9,11 +9,14 @@ import tarfile
 import traceback
 from marshal import version
 
+# Import numpy compatibility patch BEFORE motmetrics
+sys.path.append('..')
+from monkeypatch_numpy import *
+
 import numpy as np
 import pandas as pd
 import scipy as sp
 import motmetrics as mm
-import pytrec_eval as trec
 from PIL import Image
 from collections import defaultdict
 from argparse import ArgumentParser
@@ -407,7 +410,7 @@ def eval(test, pred, **kwargs):
 
     # filter prediction data
     # 根据ROI进行过滤
-    pred = removeOutliersROI(pred, dstype=dstype, roidir=roidir)
+    # pred = removeOutliersROI(pred, dstype=dstype, roidir=roidir)
     # test = removeOutliersROI(test, dstype=dstype, roidir=roidir)
     # 过滤掉只出现在一个摄像头中的车辆
     pred = removeOutliersSingleCam(pred)
@@ -507,7 +510,7 @@ def my_print_result(pred_summary):
 
 if __name__ == '__main__':
     version=opt.version
-    version = '14'
+    version = '16'
     pred_path = f'result/version/v{version}.txt'
     gt_path = './test_gt.txt'
     
