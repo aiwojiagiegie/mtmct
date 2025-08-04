@@ -510,7 +510,7 @@ def my_print_result(pred_summary):
 
 if __name__ == '__main__':
     version=opt.version
-    version = '16'
+    version = '15'
     pred_path = f'result/version/v{version}.txt'
     gt_path = './test_gt.txt'
     

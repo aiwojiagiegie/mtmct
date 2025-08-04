@@ -6,7 +6,7 @@ model_yaml_path = "./yolov10/ultralytics/cfg/models/v10/yolov10n.yaml"
 data_yaml_path = './yolov10/datasets2/multi_class/data.yaml'
 
 if __name__ == '__main__':
-    pre_model_name = f'./preliminary/det_weights/my/best_multiple3.pt'
+    pre_model_name = f'yolov10/models/yolov10s.pt'
     # 加载预训练模型
     # model = YOLOv10(model_yaml_path).load(pre_model_name)
     model = YOLO(model_yaml_path)
