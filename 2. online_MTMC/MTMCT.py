@@ -268,6 +268,8 @@ class MTMCT(object):
         if opt.draw_debug:
             base_path = '../dataset/HST/real'
             output_path = './output_HST/debug生成视频文件 新训练的模型'
+            if not os.path.exists(output_path):
+                os.makedirs(output_path)
             for idx, det in enumerate(self.cams):
                 if valid_cam[det]:
                     # 初始化视频写入器

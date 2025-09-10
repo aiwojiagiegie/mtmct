@@ -423,7 +423,7 @@ def compress_video(video_path):
 
 
 if __name__ == '__main__':
-    opt.version='8'
+    opt.version='15'
     version = 'v'+str(opt.version)
     detection_path = f'./result/version/{version}.txt'
     gt_path = 'test_gt.txt'
