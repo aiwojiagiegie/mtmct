@@ -120,9 +120,9 @@ class MTMCT(object):
         # self.det_model = attempt_load(opt.det_weights + opt.det_name + '.pt')
         # self.det_model = self.det_model.cuda().eval().half()
         if YOLOv10_detect_model_path is None:
-            self.YOLOv10_detect_model = YOLO(opt.yolo10_model)
+            self.YOLOv10_detect_model = YOLO(opt.yolo10_model, verbose=False)
         else:
-            self.YOLOv10_detect_model = YOLO(YOLOv10_detect_model_path)
+            self.YOLOv10_detect_model = YOLO(YOLOv10_detect_model_path, verbose=False)
         # For time measurement
         self.total_times = {'Det': 0, 'Ext': 0, 'MTSC': 0, 'MTMC': 0}
         self.cams = sorted(os.listdir(opt.data_dir))
@@ -773,7 +773,7 @@ class MTMCT(object):
         #
         #     # 将单个预测结果添加到列表中
         #     preds_result.append(single_pred)
-        preds_result = self.YOLOv10_detect_model(batch_img)
+        preds_result = self.YOLOv10_detect_model(batch_img, verbose=False)
 
         # 如果需要,可以将preds_result组合成一个批量结果
         # 具体的组合方式取决于YOLOv10_detect_model的输出格式
