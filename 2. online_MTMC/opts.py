@@ -38,7 +38,7 @@ class Opts:
         self.parser.add_argument('--output_dir', type=str, default='./output_HST/result/')
         self.parser.add_argument('--min_box_size', type=int, default=0.0005, help='minimum box size')
         self.parser.add_argument('--img_ori_size', type=int, default=[1080, 1920], help='original image size (pixels)')
-        self.parser.add_argument('--version', type=str, default='15', help='original image size (pixels)')
+        self.parser.add_argument('--version', type=str, default='n4', help='original image size (pixels)')
         # self.parser.add_argument('--version', type=str, default='26', help='original image size (pixels)')
         self.parser.add_argument("--train", help="是否训练新的模型", dest="train", type=bool, default="")
         self.parser.add_argument("--draw_debug", help="是否绘制debug视频", dest="draw_debug", type=bool, default=False)

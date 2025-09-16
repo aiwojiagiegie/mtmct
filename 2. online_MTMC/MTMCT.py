@@ -335,96 +335,120 @@ class MTMCT(object):
 
     def new_mtmct_online(self, fdx, online_tracks_raw):
         """
+        使用“分组匈牙利一对一匹配”替换原贪心匹配：
+        - 逐相邻摄像头对、逐车道分组构建代价矩阵（ReID 余弦距离）
+        - 对每组使用匈牙利算法进行一对一匹配
+        - 阈值门控后赋 global_id，未匹配则新建 ID
 
         Args:
-            fdx: 当前帧id
-            online_tracks_raw: 一个字典,key为camId,value为一个list,包含所有的track轨迹
+            fdx: 当前帧 id
+            online_tracks_raw: {cam: List[track]}
+        """
+        from scipy.spatial.distance import cdist
 
-        Returns:
-
-        """
-        """
-        摄像头拓扑结构说明:
-        - 每个摄像头都与其相邻的摄像头相连
-        - 41和46是端点摄像头,只与一个其他摄像头相连
-        - 其他摄像头(42, 43, 44, 45)都与两个摄像头相连
-        - camera_order定义了摄像头的线性顺序
-        """
-        # 定义摄像头拓扑结构
-        camera_topology = {
-            '41': ['42'],
-            '42': ['41', '43'],
-            '43': ['42', '44'],
-            '44': ['43', '45'],
-            '45': ['44', '46'],
-            '46': ['45']
-        }
-        from datetime import datetime, timedelta
-        # 定义摄像头时间同步信息
-        camera_sync = {
-            '41': {'frame': 109, 'time': datetime.strptime('15:30:00', '%H:%M:%S')},
-            '42': {'frame': 79, 'time': datetime.strptime('15:30:00', '%H:%M:%S')},
-            '43': {'frame': 77, 'time': datetime.strptime('15:30:00', '%H:%M:%S')},
-            '44': {'frame': 207, 'time': datetime.strptime('15:30:00', '%H:%M:%S')},
-            '45': {'frame': 119, 'time': datetime.strptime('15:30:00', '%H:%M:%S')},
-            '46': {'frame': 118, 'time': datetime.strptime('15:30:00', '%H:%M:%S')}
-        }
         camera_order = ['41', '42', '43', '44', '45', '46']
-        start = time.time()
-        # 过滤原始跟踪结果,去除不符合条件的跟踪
-        target_tracks = {}
-        for cam,tracker in self.trackers.items():
-            target_tracks[cam] = tracker.all_tracks
+
+        # 收集历史轨迹池（用于上一相邻摄像头的候选）
+        target_tracks = {cam: tracker.all_tracks for cam, tracker in self.trackers.items()}
+
+        # 过滤当前帧在线轨迹
         online_tracks_filtered = self.filter_online_tracks(online_tracks_raw)
 
-        # 合并所有摄像头的跟踪结果
-        online_tracks = []
+        # 将所有在线轨迹合并，用于最终写结果
+        online_tracks_all = []
         for cam in self.cams:
-            online_tracks += online_tracks_filtered[cam]
+            online_tracks_all += online_tracks_filtered[cam]
 
-
-        for track in online_tracks:
-            index = camera_order.index(track.cam)
-            if index == 0:
-                if track.global_id is None:
-                    track.global_id = self.next_global_id
+        # 先给首个摄像头的在线轨迹分配全局 ID（若尚未分配）
+        if camera_order:
+            first_cam = camera_order[0]
+            for tr in online_tracks_filtered.get(first_cam, []):
+                if tr.global_id is None:
+                    tr.global_id = self.next_global_id
                     self.next_global_id += 1
-            else:
-                if track.global_id is None:
-                    pre_index = index - 1
-                    pre_cam = camera_order[pre_index]
-                    pre_tracks = [t for t in target_tracks[pre_cam] if t.cam == pre_cam]
-                    cur_tracks = [t for t in target_tracks[track.cam] if t.cam == track.cam]
 
-                    # 过滤掉一些轨迹
-                    pre_tracks = [pre_track for pre_track in pre_tracks if fdx - pre_track.obs_history[-1][0] <= opt.max_time_lost]
+        # 逐对相邻摄像头进行分组匈牙利匹配
+        for idx in range(1, len(camera_order)):
+            pre_cam = camera_order[idx - 1]
+            cur_cam = camera_order[idx]
 
-                    if len(pre_tracks) >= 1:
-                        # 只匹配相同车道的轨迹
-                        same_lane_tracks = [t for t in pre_tracks if t.current_lane == track.current_lane]
+            # 候选集合：pre 是最近窗口内出现的历史轨迹；cur 是当前帧在线轨迹
+            pre_candidates = [t for t in target_tracks.get(pre_cam, []) if (
+                t.cam == pre_cam and len(t.obs_history) > 0 and (fdx - t.obs_history[-1][0] <= opt.max_time_lost)
+            )]
+            cur_candidates = [t for t in online_tracks_filtered.get(cur_cam, []) if t.cam == cur_cam]
 
-                        # 匹配相同车道的轨迹
-                        best_match, min_dist = self.find_best_match(track, same_lane_tracks, cur_tracks, opt.mtmc_match_thr)
+            if len(pre_candidates) == 0 or len(cur_candidates) == 0:
+                continue
 
-                        if best_match is not None:
-                            if best_match.global_id is not None:
-                                track.global_id = best_match.global_id
-                            else:
-                                best_match.global_id = self.next_global_id
-                                track.global_id = self.next_global_id
+            # 车道分组
+            lanes = set([t.current_lane for t in pre_candidates] + [t.current_lane for t in cur_candidates])
 
-                                self.next_global_id += 1
-                        else:
-                            # 如果没有匹配上，赋予新的轨迹ID
-                            track.global_id = self.next_global_id
+            # 当前摄像头已使用的 global_id（避免重复）
+            cur_used_gids = set([t.global_id for t in cur_candidates if t.global_id is not None])
+
+            for lane in lanes:
+                pre_lane = [t for t in pre_candidates if t.current_lane == lane]
+                cur_lane = [t for t in cur_candidates if t.current_lane == lane and t.global_id is None]
+
+                if len(pre_lane) == 0 or len(cur_lane) == 0:
+                    continue
+
+                # 构建 ReID 余弦距离代价矩阵
+                pre_feats = np.array([t.get_feature(mode=opt.get_feat_mode) for t in pre_lane])
+                cur_feats = np.array([t.get_feature(mode=opt.get_feat_mode) for t in cur_lane])
+
+                # 保护：若任一侧为空（理论上前面判断已排除）
+                if pre_feats.size == 0 or cur_feats.size == 0:
+                    continue
+
+                dist_mat = cdist(pre_feats, cur_feats, metric='cosine')
+                dist_mat = np.clip(dist_mat, 0.0, 1.0)
+
+                # 阈值门控：超过阈值的对置为大数，避免被匹配
+                gated_cost = dist_mat.copy()
+                gated_cost[gated_cost > opt.mtmc_match_thr] = 1e6
+
+                # 运行匈牙利匹配
+                indices = linear_assignment(gated_cost)
+
+                # 赋 ID（仅接受未超阈值的匹配）
+                for row, col in indices:
+                    if row < 0 or row >= len(pre_lane) or col < 0 or col >= len(cur_lane):
+                        continue
+                    cost_val = gated_cost[row, col]
+                    if cost_val > opt.mtmc_match_thr:
+                        continue
+
+                    pre_t = pre_lane[row]
+                    cur_t = cur_lane[col]
+
+                    # 目标：将 pre 的 global_id 传播给 cur；若 pre 没有，则新建一个同时赋给二者
+                    gid = pre_t.global_id
+                    if gid is None:
+                        # 如果 cur 已有 id（极少见，因为上面限定了 cur.global_id is None），优先复用 cur 的；否则新建
+                        gid = cur_t.global_id if cur_t.global_id is not None else self.next_global_id
+                        if gid == self.next_global_id:
                             self.next_global_id += 1
-                    else:
-                        # 如果没有前一个摄像头的轨迹，赋予新的轨迹ID
-                        track.global_id = self.next_global_id
-                        self.next_global_id += 1
+                        pre_t.global_id = gid
 
-        self.record_result(fdx, online_tracks)
-        pass
+                    # 避免同摄像头重复使用同一个 gid
+                    if gid in cur_used_gids and (cur_t.global_id is None or cur_t.global_id != gid):
+                        continue
+
+                    cur_t.global_id = gid
+                    cur_used_gids.add(gid)
+
+        # 对仍未分配 ID 的在线轨迹分配新 ID
+        for cam in self.cams:
+            for tr in online_tracks_filtered.get(cam, []):
+                if tr.global_id is None:
+                    tr.global_id = self.next_global_id
+                    self.next_global_id += 1
+
+        # 记录结果
+        self.record_result(fdx, online_tracks_all)
+        return
 
     def record_result(self, fdx, online_tracks_raw):
         # 记录结果
