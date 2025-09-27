@@ -189,11 +189,9 @@ class MTMCT(object):
         self.clusters_dict = {}
         self.result = []
         self.result_set = set()
-
         # 在线特征记忆（EMA）相关
         self.id_memory = {}  # global_id -> { 'feat': np.ndarray, 'count': int }
-        self.ema_momentum = getattr(opt, 'ema_momentum', 0.9)
-        self.min_quality = getattr(opt, 'min_quality', 0.2)
+        # 直接使用 self.opt 中的参数，避免在此处重复缓存配置
 
         # 加载并存储背景图像
         # self.background_images = self.load_background_images()
@@ -364,15 +362,29 @@ class MTMCT(object):
         base = max(getattr(self.opt, 'min_box_size', 0.0005) * 2.0, 1e-6)
         area_norm = np.clip(area_ratio / base, 0.0, 1.0)
         quality = 0.6 * np.clip(conf, 0.0, 1.0) + 0.4 * area_norm
-        return float(np.clip(quality, self.min_quality, 1.0))
+        return float(np.clip(quality, getattr(self.opt, 'min_quality', 0.2), 1.0))
 
     def _get_memory_feature(self, track):
-        gid = getattr(track, 'global_id', None)
-        if gid is not None and gid in self.id_memory:
-            return self.id_memory[gid]['feat']
-        # 回退到当前帧特征
+        """
+        基于 opt.memory_mode 返回外观特征：
+        - current: 仅使用当前帧特征
+        - memory: 优先使用记忆（若无则回退当前）
+        - hybrid: 记忆与当前的加权融合（简单平均）
+        """
         cur = track.get_feature(mode=self.opt.get_feat_mode)
-        return self._normalize_feat(cur)
+        cur = self._normalize_feat(cur)
+        gid = getattr(track, 'global_id', None)
+        mem = None
+        if gid is not None and gid in self.id_memory:
+            mem = self.id_memory[gid]['feat']
+
+        mode = self.opt.memory_mode
+        if mode == 'current' or mem is None:
+            return cur
+        if mode == 'memory':
+            return mem
+        # hybrid
+        return self._normalize_feat(0.5 * mem + 0.5 * cur)
 
     def _update_id_memory(self, gid, new_feat, quality):
         if gid is None or new_feat is None:
@@ -385,8 +397,14 @@ class MTMCT(object):
             return
         old = self.id_memory[gid]['feat']
         # 质量调制的 EMA 更新：beta 越大越依赖新特征
-        beta_base = (1.0 - float(self.ema_momentum))
-        beta = np.clip(beta_base * float(quality), 0.0, 1.0)
+        if self.opt.use_quality_ema:
+            ema_mom = float(self.opt.ema_momentum)
+            beta_base = (1.0 - ema_mom)
+            beta = np.clip(beta_base * float(quality), 0.0, 1.0)
+        else:
+            # 固定步长 EMA（不使用质量调制）
+            ema_mom = float(self.opt.ema_momentum)
+            beta = np.clip(1.0 - ema_mom, 0.0, 1.0)
         updated = (1.0 - beta) * old + beta * new_feat
         self.id_memory[gid]['feat'] = self._normalize_feat(updated)
         self.id_memory[gid]['count'] += 1
@@ -403,6 +421,10 @@ class MTMCT(object):
             online_tracks_raw: {cam: List[track]}
         """
         from scipy.spatial.distance import cdist
+
+        # 若未启用分组匈牙利路径，回退到旧的 mtmct_online（用于消融）
+        if not self.opt.use_grouped_hungarian:
+            return self.mtmct_online(fdx, online_tracks_raw)
 
         camera_order = ['41', '42', '43', '44', '45', '46']
 
@@ -429,10 +451,19 @@ class MTMCT(object):
                 f = tr.get_feature(mode=opt.get_feat_mode)
                 self._update_id_memory(tr.global_id, f, q)
 
-        # 逐对相邻摄像头进行分组匈牙利匹配
-        for idx in range(1, len(camera_order)):
-            pre_cam = camera_order[idx - 1]
-            cur_cam = camera_order[idx]
+        # 生成需要处理的摄像头对
+        if self.opt.topology_adjacent_only:
+            cam_pairs = [(camera_order[i - 1], camera_order[i]) for i in range(1, len(camera_order))]
+        else:
+            cam_pairs = []
+            for i in range(len(camera_order)):
+                for j in range(len(camera_order)):
+                    if i == j:
+                        continue
+                    cam_pairs.append((camera_order[i], camera_order[j]))
+
+        # 逐对摄像头进行（可选）分组匈牙利匹配
+        for (pre_cam, cur_cam) in cam_pairs:
 
             # 候选集合：pre 是最近窗口内出现的历史轨迹；cur 是当前帧在线轨迹
             pre_candidates = [t for t in target_tracks.get(pre_cam, []) if (
@@ -443,15 +474,22 @@ class MTMCT(object):
             if len(pre_candidates) == 0 or len(cur_candidates) == 0:
                 continue
 
-            # 车道分组
-            lanes = set([t.current_lane for t in pre_candidates] + [t.current_lane for t in cur_candidates])
+            # 车道分组（可开关）
+            if self.opt.lane_grouping:
+                lanes = set([t.current_lane for t in pre_candidates] + [t.current_lane for t in cur_candidates])
+            else:
+                lanes = {'__ALL__'}
 
             # 当前摄像头已使用的 global_id（避免重复）
             cur_used_gids = set([t.global_id for t in cur_candidates if t.global_id is not None])
 
             for lane in lanes:
-                pre_lane = [t for t in pre_candidates if t.current_lane == lane]
-                cur_lane = [t for t in cur_candidates if t.current_lane == lane and t.global_id is None]
+                if self.opt.lane_grouping:
+                    pre_lane = [t for t in pre_candidates if t.current_lane == lane]
+                    cur_lane = [t for t in cur_candidates if t.current_lane == lane and t.global_id is None]
+                else:
+                    pre_lane = list(pre_candidates)
+                    cur_lane = [t for t in cur_candidates if t.global_id is None]
 
                 if len(pre_lane) == 0 or len(cur_lane) == 0:
                     continue
@@ -467,9 +505,22 @@ class MTMCT(object):
                 dist_mat = cdist(pre_feats, cur_feats, metric='cosine')
                 dist_mat = np.clip(dist_mat, 0.0, 1.0)
 
+                # 若未分组，则按车道不一致施加惩罚或硬掩膜
+                if not self.opt.lane_grouping:
+                    pre_lanes = [t.current_lane for t in pre_lane]
+                    cur_lanes = [t.current_lane for t in cur_lane]
+                    mismatch = np.not_equal.outer(pre_lanes, cur_lanes)
+                    if self.opt.lane_mask_strict:
+                        dist_mat = dist_mat.copy()
+                        dist_mat[mismatch] = 1e6
+                    else:
+                        penalty = float(self.opt.lane_penalty)
+                        dist_mat = dist_mat + (mismatch.astype(np.float32) * penalty)
+
                 # 阈值门控：超过阈值的对置为大数，避免被匹配
+                thr = float(self.opt.gating_app_thr)
                 gated_cost = dist_mat.copy()
-                gated_cost[gated_cost > opt.mtmc_match_thr] = 1e6
+                gated_cost[gated_cost > thr] = 1e6
 
                 # 运行匈牙利匹配
                 indices = linear_assignment(gated_cost)
@@ -479,7 +530,7 @@ class MTMCT(object):
                     if row < 0 or row >= len(pre_lane) or col < 0 or col >= len(cur_lane):
                         continue
                     cost_val = gated_cost[row, col]
-                    if cost_val > opt.mtmc_match_thr:
+                    if cost_val > thr:
                         continue
 
                     pre_t = pre_lane[row]
