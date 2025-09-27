@@ -190,6 +190,11 @@ class MTMCT(object):
         self.result = []
         self.result_set = set()
 
+        # 在线特征记忆（EMA）相关
+        self.id_memory = {}  # global_id -> { 'feat': np.ndarray, 'count': int }
+        self.ema_momentum = getattr(opt, 'ema_momentum', 0.9)
+        self.min_quality = getattr(opt, 'min_quality', 0.2)
+
         # 加载并存储背景图像
         # self.background_images = self.load_background_images()
         # self.background_images = np.transpose(self.background_images, (0, 3, 1, 2))
@@ -333,6 +338,59 @@ class MTMCT(object):
 
         return batch_img, valid_cam
 
+    def _normalize_feat(self, feat):
+        if feat is None:
+            return None
+        feat = np.asarray(feat)
+        if feat.ndim > 1:
+            feat = feat.reshape(-1)
+        norm = np.linalg.norm(feat) + 1e-12
+        return feat / norm
+
+    def _compute_track_quality(self, track):
+        # 基于检测置信与框面积的简单质量估计，范围约 [min_quality, 1]
+        try:
+            conf = float(track.obs_history[-1][2])
+        except Exception:
+            conf = 0.5
+        try:
+            tlwh = track.obs_history[-1][1]
+            w = float(tlwh[2])
+            h = float(tlwh[3])
+        except Exception:
+            w, h = 0.0, 0.0
+        area_ratio = (w * h) / (self.img_w * self.img_h + 1e-12)
+        # 相对最小框面积做归一，避免超小框影响
+        base = max(getattr(self.opt, 'min_box_size', 0.0005) * 2.0, 1e-6)
+        area_norm = np.clip(area_ratio / base, 0.0, 1.0)
+        quality = 0.6 * np.clip(conf, 0.0, 1.0) + 0.4 * area_norm
+        return float(np.clip(quality, self.min_quality, 1.0))
+
+    def _get_memory_feature(self, track):
+        gid = getattr(track, 'global_id', None)
+        if gid is not None and gid in self.id_memory:
+            return self.id_memory[gid]['feat']
+        # 回退到当前帧特征
+        cur = track.get_feature(mode=self.opt.get_feat_mode)
+        return self._normalize_feat(cur)
+
+    def _update_id_memory(self, gid, new_feat, quality):
+        if gid is None or new_feat is None:
+            return
+        new_feat = self._normalize_feat(new_feat)
+        if new_feat is None:
+            return
+        if gid not in self.id_memory:
+            self.id_memory[gid] = {'feat': new_feat.copy(), 'count': 1}
+            return
+        old = self.id_memory[gid]['feat']
+        # 质量调制的 EMA 更新：beta 越大越依赖新特征
+        beta_base = (1.0 - float(self.ema_momentum))
+        beta = np.clip(beta_base * float(quality), 0.0, 1.0)
+        updated = (1.0 - beta) * old + beta * new_feat
+        self.id_memory[gid]['feat'] = self._normalize_feat(updated)
+        self.id_memory[gid]['count'] += 1
+
     def new_mtmct_online(self, fdx, online_tracks_raw):
         """
         使用“分组匈牙利一对一匹配”替换原贪心匹配：
@@ -366,6 +424,10 @@ class MTMCT(object):
                 if tr.global_id is None:
                     tr.global_id = self.next_global_id
                     self.next_global_id += 1
+                # 初始化后立即用当前观测更新记忆
+                q = self._compute_track_quality(tr)
+                f = tr.get_feature(mode=opt.get_feat_mode)
+                self._update_id_memory(tr.global_id, f, q)
 
         # 逐对相邻摄像头进行分组匈牙利匹配
         for idx in range(1, len(camera_order)):
@@ -395,8 +457,8 @@ class MTMCT(object):
                     continue
 
                 # 构建 ReID 余弦距离代价矩阵
-                pre_feats = np.array([t.get_feature(mode=opt.get_feat_mode) for t in pre_lane])
-                cur_feats = np.array([t.get_feature(mode=opt.get_feat_mode) for t in cur_lane])
+                pre_feats = np.array([self._get_memory_feature(t) for t in pre_lane])
+                cur_feats = np.array([self._get_memory_feature(t) for t in cur_lane])
 
                 # 保护：若任一侧为空（理论上前面判断已排除）
                 if pre_feats.size == 0 or cur_feats.size == 0:
@@ -439,12 +501,25 @@ class MTMCT(object):
                     cur_t.global_id = gid
                     cur_used_gids.add(gid)
 
+                    # 用当前观测对记忆做质量加权更新（pre 与 cur 均更新）
+                    q_pre = self._compute_track_quality(pre_t)
+                    f_pre = pre_t.get_feature(mode=opt.get_feat_mode)
+                    self._update_id_memory(gid, f_pre, q_pre)
+
+                    q_cur = self._compute_track_quality(cur_t)
+                    f_cur = cur_t.get_feature(mode=opt.get_feat_mode)
+                    self._update_id_memory(gid, f_cur, q_cur)
+
         # 对仍未分配 ID 的在线轨迹分配新 ID
         for cam in self.cams:
             for tr in online_tracks_filtered.get(cam, []):
                 if tr.global_id is None:
                     tr.global_id = self.next_global_id
                     self.next_global_id += 1
+                # 确保每个在线轨迹的记忆被及时刷新
+                q = self._compute_track_quality(tr)
+                f = tr.get_feature(mode=opt.get_feat_mode)
+                self._update_id_memory(tr.global_id, f, q)
 
         # 记录结果
         self.record_result(fdx, online_tracks_all)
