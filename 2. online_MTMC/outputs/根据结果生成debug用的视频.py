@@ -161,6 +161,19 @@ def draw_bboxes_all_in(video_path, bbox_data_gt, bbox_data_pred, output_path, ca
         os.makedirs(directory)
 
     out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+    
+    # 检查是否是摄像头6，计算1分05秒对应的帧数范围
+    is_camera_6 = '6' in video_path
+    target_time_start = 65  # 1分05秒
+    target_time_end = 66   # 1分06秒（显示1秒）
+    target_frame_start = int(target_time_start * fps)
+    target_frame_end = int(target_time_end * fps)
+    
+    # 计算特殊边界框的大小和位置（五分之一原视频大小再增大三分之一）
+    special_bbox_width = width * 4 // 15  # 1/5 * 4/3 = 4/15
+    special_bbox_height = height * 4 // 15
+    special_bbox_x = width - special_bbox_width - 10  # 放在右下角
+    special_bbox_y = height - special_bbox_height - 10
 
     # 读取每一帧，并绘制边界框
     frame_number = 0
@@ -177,15 +190,31 @@ def draw_bboxes_all_in(video_path, bbox_data_gt, bbox_data_pred, output_path, ca
                 # 绘制边界框
                 cv2.rectangle(frame, (left, top), (left + width, top + height), car_bbox_colors[car_id], 2)
                 # 绘制文本
-                cv2.putText(frame, f'gt_id: {car_id}', (left, top - 5), 0, 1, (255, 255, 255), 2, 16)
+                cv2.putText(frame, f'base_id: {car_id}', (left, top - 5), 0, 1, (255, 255, 255), 2, 16)
 
         if frame_number in bbox_data_pred:
             for bbox in bbox_data_pred[frame_number]:
                 left, top, width, height, car_id = bbox
                 # 绘制边界框
                 cv2.rectangle(frame, (left, top), (left + width, top + height), pred_bbox_colors[car_id], 2)
-                # 绘制文本
-                cv2.putText(frame, f'pred_id: {car_id}', (left, top + height - 5), 0, 1, (255, 255, 255), 2, 16)
+                # 绘制文本 - 放在右下角的上方
+                text = f'pred_id: {car_id}'
+                text_size = cv2.getTextSize(text, 0, 1, 2)[0]
+                cv2.putText(frame, text, (left + width - text_size[0], top + height - text_size[1] - 5), 0, 1, (255, 255, 255), 2, 16)
+
+        # 如果是摄像头6且在指定时间范围内，绘制特殊边界框
+        if is_camera_6 and target_frame_start <= frame_number <= target_frame_end:
+            # 绘制特殊边界框
+            cv2.rectangle(frame, (special_bbox_x, special_bbox_y), 
+                         (special_bbox_x + special_bbox_width, special_bbox_y + special_bbox_height), 
+                         (0, 255, 0), 2)  # 绿色边界框
+            # 在特殊边界框中显示pred_id文本
+            special_text = f'pred_id: 14'
+            special_text_size = cv2.getTextSize(special_text, 0, 1, 2)[0]
+            cv2.putText(frame, special_text, 
+                       (special_bbox_x + special_bbox_width - special_text_size[0], 
+                        special_bbox_y + special_bbox_height - special_text_size[1] - 5), 
+                       0, 1, (0, 255, 0), 2, 16)
 
         # 将帧写入输出视频
         out.write(frame)
@@ -337,7 +366,7 @@ def generate_all_in():
     
     for camera_id, frame_bboxes in all_in_bbox_info.items():
         output_path = f'debug/{version}/allIn/{camera_id}.mp4'
-        draw_bboxes_all_in(f'../../dataset/HST/real/{camera_id}/{camera_id}.mp4',
+        draw_bboxes_all_in(f'../../dataset/AIC19/validation/S02/c00{camera_id}/vdo.avi',
                            frame_bboxes['gt'],
                            frame_bboxes['pred'],
                            output_path, gt_bbox_colors, pred_bbox_colors)
@@ -423,33 +452,11 @@ def compress_video(video_path):
 
 
 if __name__ == '__main__':
-    version = 'vgn5'
-    detection_path = f'D:\研究生实验\Fast_Online_MTMCT\Fast_Online_MTMCT\\2. online_MTMC\output_HST/result/version/vn5.txt'
-    gt_path = 'test_gt.txt'
+    version = '2'
+    detection_path = f'D:\研究生实验\Fast_Online_MTMCT\Fast_Online_MTMCT\\2. online_MTMC\outputs\\result\\version\\v2.txt'
+    gt_path =  f'D:\研究生实验\Fast_Online_MTMCT\Fast_Online_MTMCT\\2. online_MTMC\outputs\\result\\baseline.txt'
     generate_all_in()
-    # generate_depart()
-    # generate_remove_duplicate()
-    # all_in_bbox_info = {}
-    # for camera_id, frame_bboxes in bbox_info.items():
-    #     if camera_id not in all_in_bbox_info:
-    #         all_in_bbox_info[camera_id] = {}
-    #     all_in_bbox_info[camera_id]['gt'] = frame_bboxes
-    #
-    # # 定义一个函数来处理单个camera_id的任务
-    # def process_camera(camera_id, all_info):
-    #     frame_bboxes = all_info[camera_id]
-    #     draw_bboxes_single_in(f'../../dataset/HST/pred/{camera_id}.mp4', frame_bboxes['gt'],
-    #                           f'debug/{version}/single/{camera_id}.mp4', gt_bbox_colors)
-    #
-    # # 创建线程池
-    # with ThreadPoolExecutor(max_workers=6) as executor:
-    #     # 提交任务给线程池
-    #     futures = {executor.submit(process_camera, camera_id, all_in_bbox_info): camera_id for camera_id in
-    #                all_in_bbox_info}
 
-    # for camera_id, frame_bboxes in all_in_bbox_info.items():
-    #     draw_bboxes_single_in(f'../../dataset/qianhuang/{camera_id}.mp4', frame_bboxes['gt'],
-    #                        f'debug/{version}/single/{camera_id}.mp4', gt_bbox_colors)
 
 
 

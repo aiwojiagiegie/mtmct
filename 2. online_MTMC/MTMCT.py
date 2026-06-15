@@ -190,10 +190,10 @@ class MTMCT(object):
         self.result = []
         self.result_set = set()
 
-        # 在线特征记忆（EMA）相关
+        # 在线特征记忆（EMA）相关（由 opts.enable_mtmct_memory 控制开关；系数写死）
         self.id_memory = {}  # global_id -> { 'feat': np.ndarray, 'count': int }
-        self.ema_momentum = getattr(opt, 'ema_momentum', 0.9)
-        self.min_quality = getattr(opt, 'min_quality', 0.2)
+        self.ema_momentum = 0.9
+        self.min_quality = 0.2
 
         # 加载并存储背景图像
         # self.background_images = self.load_background_images()
@@ -241,12 +241,13 @@ class MTMCT(object):
 
             # 根据detection把bbox绘制到图片中
             self.draw_debug_video(batch_img, detection, valid_cam, video_writers)
-
+            
             # 跨摄像头跟踪
-            if 'n' in opt.version:
-                self.new_mtmct_online(fdx, online_tracks_raw)
-            else:
-                self.mtmct_online(fdx, online_tracks_raw)
+            # if 'n' in opt.version:
+            #     self.new_mtmct_online(fdx, online_tracks_raw)
+            # else:
+            #     self.mtmct_online(fdx, online_tracks_raw)
+            self.new_mtmct_online(fdx, online_tracks_raw)
 
         # 释放视频写入器
         for writer in video_writers.values():
@@ -268,6 +269,13 @@ class MTMCT(object):
             total_t += self.total_times[key] / (np.max(self.f_nums) + 1)
         print('Tracking Time: %05f' % track_t)
         print('Total Time: %05f' % total_t)
+        
+        # 计算匹配过程 FPS（仅 MTSC + MTMC）
+        matching_time = self.total_times['MTSC'] + self.total_times['MTMC']
+        total_frames = np.max(self.f_nums)
+        matching_fps = total_frames / matching_time if matching_time > 0 else 0
+        print('Matching Total Time: %.4f s' % matching_time)
+        print('Matching FPS: %.2f' % matching_fps)
 
     def draw_debug_video(self, batch_img, detection, valid_cam, video_writers):
         if opt.draw_debug:
@@ -361,10 +369,13 @@ class MTMCT(object):
             w, h = 0.0, 0.0
         area_ratio = (w * h) / (self.img_w * self.img_h + 1e-12)
         # 相对最小框面积做归一，避免超小框影响
-        base = max(getattr(self.opt, 'min_box_size', 0.0005) * 2.0, 1e-6)
+        base = max(opt.min_box_size * 2.0, 1e-6)
         area_norm = np.clip(area_ratio / base, 0.0, 1.0)
-        quality = 0.6 * np.clip(conf, 0.0, 1.0) + 0.4 * area_norm
-        return float(np.clip(quality, self.min_quality, 1.0))
+        conf_w = float(opt.quality_conf_weight)
+        conf_w = np.clip(conf_w, 0.0, 1.0)
+        area_w = 1.0 - conf_w
+        quality = conf_w * np.clip(conf, 0.0, 1.0) + area_w * area_norm
+        return float(np.clip(quality, opt.min_quality, 1.0))
 
     def _get_memory_feature(self, track):
         gid = getattr(track, 'global_id', None)
@@ -381,22 +392,105 @@ class MTMCT(object):
         if new_feat is None:
             return
         if gid not in self.id_memory:
-            self.id_memory[gid] = {'feat': new_feat.copy(), 'count': 1}
+            self.id_memory[gid] = {'feat': new_feat.copy(), 'count': 1, 'since': 0, 'age': 0}
             return
-        old = self.id_memory[gid]['feat']
-        # 质量调制的 EMA 更新：beta 越大越依赖新特征
-        beta_base = (1.0 - float(self.ema_momentum))
-        beta = np.clip(beta_base * float(quality), 0.0, 1.0)
-        updated = (1.0 - beta) * old + beta * new_feat
-        self.id_memory[gid]['feat'] = self._normalize_feat(updated)
-        self.id_memory[gid]['count'] += 1
+        mem = self.id_memory[gid]
+        mem['age'] = mem.get('age', 0) + 1
+        old = mem['feat']
+
+        # 距离度量（已归一通常接近余弦），用于跳过/重置
+        def _cos_dist(a, b):
+            denom = (np.linalg.norm(a) * np.linalg.norm(b)) + 1e-12
+            return float(1.0 - float(np.dot(a, b)) / denom)
+
+        dist = _cos_dist(old, new_feat)
+
+        # 冷启动：前 K 次调用不更新
+        bootstrap_frames = int(opt.bootstrap_frames)
+        if mem['age'] <= bootstrap_frames:
+            return
+
+        # 重置策略：距离过大直接重置为新特征
+        reset_thr = float(opt.memory_reset_thr)
+        if dist > reset_thr:
+            mem['feat'] = new_feat
+            mem['count'] += 1
+            mem['since'] = 0
+            return
+
+        # 跳过策略：距离偏大则跳过本次更新
+        skip_thr = float(opt.update_skip_thr)
+        if dist > skip_thr:
+            mem['since'] = mem.get('since', 0) + 1
+            return
+
+        # 限频：每 N 次才执行一次更新
+        n_every = int(opt.update_every_n)
+        mem['since'] = mem.get('since', 0) + 1
+        if mem['since'] < n_every:
+            return
+        mem['since'] = 0
+
+        # 鲁棒更新：对增量做裁剪近似 Huber
+        robust_on = bool(opt.robust_update)
+        if robust_on:
+            delta = new_feat - old
+            delta = np.clip(delta, -float(opt.huber_delta), float(opt.huber_delta))
+            new_feat_eff = self._normalize_feat(old + delta)
+        else:
+            new_feat_eff = new_feat
+
+        # 质量调制 EMA 步长，并裁剪最大步长
+        ema_mom = float(opt.ema_momentum)
+        beta = (1.0 - ema_mom) * float(quality)
+        beta = float(np.clip(beta, 0.0, float(opt.clip_update_beta_max)))
+
+        updated = (1.0 - beta) * old + beta * new_feat_eff
+        mem['feat'] = self._normalize_feat(updated)
+        mem['count'] += 1
+
+    def _greedy_assignment(self, cost_matrix, threshold):
+        """
+        贪心匹配算法（用于消融实验）
+        每次选择代价最小的配对，直到无法匹配
+        
+        Args:
+            cost_matrix: 代价矩阵 (M×N)
+            threshold: 匹配阈值，超过该值不匹配
+        
+        Returns:
+            matches: List of (row, col) tuples
+        """
+        matches = []
+        cost = cost_matrix.copy()
+        
+        while True:
+            # 找到当前最小代价
+            min_val = cost.min()
+            
+            # 如果最小代价超过阈值，停止匹配
+            if min_val > threshold:
+                break
+            
+            # 找到最小代价的位置
+            min_idx = np.unravel_index(cost.argmin(), cost.shape)
+            row, col = min_idx
+            
+            # 记录这个匹配
+            matches.append((row, col))
+            
+            # 将该行和该列的所有元素设为无穷大（已被占用）
+            cost[row, :] = 1e10
+            cost[:, col] = 1e10
+        
+        return matches
 
     def new_mtmct_online(self, fdx, online_tracks_raw):
         """
-        使用“分组匈牙利一对一匹配”替换原贪心匹配：
-        - 逐相邻摄像头对、逐车道分组构建代价矩阵（ReID 余弦距离）
-        - 对每组使用匈牙利算法进行一对一匹配
-        - 阈值门控后赋 global_id，未匹配则新建 ID
+        支持消融实验的MTMCT在线匹配函数：
+        - 可控：拓扑顺序+车道分组（opt.use_topology）
+        - 可控：匈牙利算法 vs 贪心（opt.use_hungarian）
+        - 可控：质量记忆 vs 单帧特征（opt.enable_mtmct_memory）
 
         Args:
             fdx: 当前帧 id
@@ -425,86 +519,112 @@ class MTMCT(object):
                     tr.global_id = self.next_global_id
                     self.next_global_id += 1
                 # 初始化后立即用当前观测更新记忆
-                q = self._compute_track_quality(tr)
-                f = tr.get_feature(mode=opt.get_feat_mode)
-                self._update_id_memory(tr.global_id, f, q)
+                if opt.enable_mtmct_memory:
+                    q = self._compute_track_quality(tr)
+                    f = tr.get_feature(mode=opt.get_feat_mode)
+                    self._update_id_memory(tr.global_id, f, q)
 
-        # 逐对相邻摄像头进行分组匈牙利匹配
-        for idx in range(1, len(camera_order)):
-            pre_cam = camera_order[idx - 1]
-            cur_cam = camera_order[idx]
+        # ========== 【创新点1】拓扑感知的分层分组匹配 ==========
+        if opt.use_topology:
+            # 逐对相邻摄像头进行匹配（拓扑顺序）
+            camera_pairs = [(camera_order[i-1], camera_order[i]) for i in range(1, len(camera_order))]
+        else:
+            # 全局匹配：所有可能的摄像头对（不考虑拓扑）
+            camera_pairs = [(cam1, cam2) for cam1 in camera_order for cam2 in camera_order if cam1 != cam2]
 
-            # 候选集合：pre 是最近窗口内出现的历史轨迹；cur 是当前帧在线轨迹
+        for pre_cam, cur_cam in camera_pairs:
+            # 候选集合：pre 是 mtmc_temporal_window 内出现的历史轨迹（独立于 SCT 的 max_time_lost）
             pre_candidates = [t for t in target_tracks.get(pre_cam, []) if (
-                t.cam == pre_cam and len(t.obs_history) > 0 and (fdx - t.obs_history[-1][0] <= opt.max_time_lost)
+                t.cam == pre_cam and len(t.obs_history) > 0
+                and (fdx - t.obs_history[-1][0] <= opt.mtmc_temporal_window)
             )]
             cur_candidates = [t for t in online_tracks_filtered.get(cur_cam, []) if t.cam == cur_cam]
 
             if len(pre_candidates) == 0 or len(cur_candidates) == 0:
                 continue
 
-            # 车道分组
-            lanes = set([t.current_lane for t in pre_candidates] + [t.current_lane for t in cur_candidates])
-
-            # 当前摄像头已使用的 global_id（避免重复）
             cur_used_gids = set([t.global_id for t in cur_candidates if t.global_id is not None])
 
-            for lane in lanes:
-                pre_lane = [t for t in pre_candidates if t.current_lane == lane]
-                cur_lane = [t for t in cur_candidates if t.current_lane == lane and t.global_id is None]
+            # 统一收集未分配 ID 的 cur 轨迹（不再按车道硬分组）
+            cur_no_id = [t for t in cur_candidates if t.global_id is None]
+            if len(cur_no_id) == 0:
+                continue
 
-                if len(pre_lane) == 0 or len(cur_lane) == 0:
-                    continue
+            # ========== 【创新点3】质量感知的记忆特征 ==========
+            if opt.enable_mtmct_memory:
+                pre_feats = np.array([self._get_memory_feature(t) for t in pre_candidates])
+                cur_feats = np.array([self._get_memory_feature(t) for t in cur_no_id])
+            else:
+                pre_feats = np.array([t.get_feature(mode=opt.get_feat_mode) for t in pre_candidates])
+                cur_feats = np.array([t.get_feature(mode=opt.get_feat_mode) for t in cur_no_id])
 
-                # 构建 ReID 余弦距离代价矩阵
-                pre_feats = np.array([self._get_memory_feature(t) for t in pre_lane])
-                cur_feats = np.array([self._get_memory_feature(t) for t in cur_lane])
+            if pre_feats.size == 0 or cur_feats.size == 0:
+                continue
 
-                # 保护：若任一侧为空（理论上前面判断已排除）
-                if pre_feats.size == 0 or cur_feats.size == 0:
-                    continue
+            dist_mat = cdist(pre_feats, cur_feats, metric='cosine')
+            dist_mat = np.clip(dist_mat, 0.0, 1.0)
 
-                dist_mat = cdist(pre_feats, cur_feats, metric='cosine')
-                dist_mat = np.clip(dist_mat, 0.0, 1.0)
+            # ========== 车道软惩罚（替代原硬分组）==========
+            # lane_penalty_weight=0 → 无车道约束；1e6 → 等效硬约束
+            if opt.lane_penalty_weight > 0:
+                for i, pre_t in enumerate(pre_candidates):
+                    for j, cur_t in enumerate(cur_no_id):
+                        if pre_t.current_lane != cur_t.current_lane:
+                            dist_mat[i, j] += opt.lane_penalty_weight
 
-                # 阈值门控：超过阈值的对置为大数，避免被匹配
-                gated_cost = dist_mat.copy()
-                gated_cost[gated_cost > opt.mtmc_match_thr] = 1e6
+            # ========== 速度可行性惩罚 ==========
+            # speed_tolerance=inf → 不启用；有限值 → 对帧差偏差施加惩罚
+            if opt.speed_tolerance != float('inf'):
+                expected = float(opt.expected_travel_frames)
+                tol = float(opt.speed_tolerance)
+                spd_w = float(opt.speed_penalty_weight)
+                for i, pre_t in enumerate(pre_candidates):
+                    pre_last_frame = pre_t.obs_history[-1][0]
+                    for j, cur_t in enumerate(cur_no_id):
+                        cur_first_frame = cur_t.obs_history[0][0] if len(cur_t.obs_history) > 0 else fdx
+                        delta_t = abs(cur_first_frame - pre_last_frame)
+                        deviation = max(0.0, abs(delta_t - expected) - tol)
+                        dist_mat[i, j] += deviation * spd_w
 
-                # 运行匈牙利匹配
+            # 阈值门控
+            gated_cost = dist_mat.copy()
+            gated_cost[gated_cost > opt.mtmc_match_thr] = 1e6
+
+            # ========== 【创新点2】匈牙利算法 vs 贪心 ==========
+            if opt.use_hungarian:
                 indices = linear_assignment(gated_cost)
+            else:
+                indices = self._greedy_assignment(gated_cost, opt.mtmc_match_thr)
 
-                # 赋 ID（仅接受未超阈值的匹配）
-                for row, col in indices:
-                    if row < 0 or row >= len(pre_lane) or col < 0 or col >= len(cur_lane):
-                        continue
-                    cost_val = gated_cost[row, col]
-                    if cost_val > opt.mtmc_match_thr:
-                        continue
+            # 赋 ID（仅接受未超阈值的匹配）
+            for row, col in indices:
+                if row < 0 or row >= len(pre_candidates) or col < 0 or col >= len(cur_no_id):
+                    continue
+                cost_val = gated_cost[row, col]
+                if cost_val > opt.mtmc_match_thr:
+                    continue
 
-                    pre_t = pre_lane[row]
-                    cur_t = cur_lane[col]
+                pre_t = pre_candidates[row]
+                cur_t = cur_no_id[col]
 
-                    # 目标：将 pre 的 global_id 传播给 cur；若 pre 没有，则新建一个同时赋给二者
-                    gid = pre_t.global_id
-                    if gid is None:
-                        # 如果 cur 已有 id（极少见，因为上面限定了 cur.global_id is None），优先复用 cur 的；否则新建
-                        gid = cur_t.global_id if cur_t.global_id is not None else self.next_global_id
-                        if gid == self.next_global_id:
-                            self.next_global_id += 1
-                        pre_t.global_id = gid
+                gid = pre_t.global_id
+                if gid is None:
+                    gid = cur_t.global_id if cur_t.global_id is not None else self.next_global_id
+                    if gid == self.next_global_id:
+                        self.next_global_id += 1
+                    pre_t.global_id = gid
 
-                    # 避免同摄像头重复使用同一个 gid
-                    if gid in cur_used_gids and (cur_t.global_id is None or cur_t.global_id != gid):
-                        continue
+                if gid in cur_used_gids and (cur_t.global_id is None or cur_t.global_id != gid):
+                    continue
 
-                    cur_t.global_id = gid
-                    cur_used_gids.add(gid)
+                cur_t.global_id = gid
+                cur_used_gids.add(gid)
 
-                    # 用当前观测对记忆做质量加权更新（pre 与 cur 均更新）
-                    q_pre = self._compute_track_quality(pre_t)
-                    f_pre = pre_t.get_feature(mode=opt.get_feat_mode)
-                    self._update_id_memory(gid, f_pre, q_pre)
+                if opt.enable_mtmct_memory:
+                    if opt.dual_update == 'pre_and_cur':
+                        q_pre = self._compute_track_quality(pre_t)
+                        f_pre = pre_t.get_feature(mode=opt.get_feat_mode)
+                        self._update_id_memory(gid, f_pre, q_pre)
 
                     q_cur = self._compute_track_quality(cur_t)
                     f_cur = cur_t.get_feature(mode=opt.get_feat_mode)
@@ -517,9 +637,10 @@ class MTMCT(object):
                     tr.global_id = self.next_global_id
                     self.next_global_id += 1
                 # 确保每个在线轨迹的记忆被及时刷新
-                q = self._compute_track_quality(tr)
-                f = tr.get_feature(mode=opt.get_feat_mode)
-                self._update_id_memory(tr.global_id, f, q)
+                if opt.enable_mtmct_memory:
+                    q = self._compute_track_quality(tr)
+                    f = tr.get_feature(mode=opt.get_feat_mode)
+                    self._update_id_memory(tr.global_id, f, q)
 
         # 记录结果
         self.record_result(fdx, online_tracks_all)

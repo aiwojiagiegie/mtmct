@@ -510,9 +510,10 @@ def my_print_result(pred_summary):
 
 if __name__ == '__main__':
     version=opt.version
-    version = 'n5'
+    version = '2'
     pred_path = f'result/version/v{version}.txt'
-    gt_path = './test_gt.txt'
+    # pred_path = f'result/baseline.txt'
+    gt_path = './ground_truth_validation.txt'
     
     calculate_results(gt_path, pred_path)
 
