@@ -737,7 +737,7 @@ class MTMCT(object):
         # for cam_index, cam in enumerate(self.cams):
         #     if not valid_cam[cam]:
         #         preds.insert(cam_index, torch.zeros((0, 6)).cuda().half())
-        preds_result = self.YOLOv10_detect_model(batch_img)
+        preds_result = self.YOLOv10_detect_model(batch_img, verbose=False)
         ans = []
         for result in preds_result:
             boxes = result.boxes.data.tolist()

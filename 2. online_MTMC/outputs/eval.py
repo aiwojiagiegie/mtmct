@@ -8,6 +8,16 @@ import zipfile
 import tarfile
 import traceback
 import numpy as np
+
+# NumPy 2.0 移除了 np.asfarray，而 motmetrics 仍在使用它，这里补回兼容实现
+if not hasattr(np, "asfarray"):
+    def asfarray(a, dtype=np.float64):
+        if not np.issubdtype(dtype, np.inexact):
+            dtype = np.float64
+        return np.asarray(a, dtype=dtype)
+
+    np.asfarray = asfarray
+
 import pandas as pd
 import requests
 import scipy as sp
